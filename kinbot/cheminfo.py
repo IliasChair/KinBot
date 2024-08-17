@@ -10,11 +10,11 @@ from kinbot import kb_path
 # try to import pybel
 try:
     import pybel
-    pybel.ob.obErrorLog.SetOutputLevel(0)
+    #pybel.ob.obErrorLog.SetOutputLevel(0)
 except ImportError:
     try:
         from openbabel import pybel
-        pybel.ob.obErrorLog.SetOutputLevel(0)
+        #pybel.ob.obErrorLog.SetOutputLevel(0)
     except:
         print('Warning: Pybel could not be imported.')
         print('Certain features or the whole code might not run properly.')
@@ -247,5 +247,3 @@ def create_smiles(inchi):
 def create_smi_from_geom(atom, geom):
     inchi = create_inchi_from_geom(atom, geom)
     return create_smiles(inchi)
-
-
