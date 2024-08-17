@@ -1352,6 +1352,10 @@ def create_rotdpy_inputs(par, bless, vdW) -> None:
     [reactant, reaction_name, products, barrier, vdW_energy, vdW_direction]
     """
 
+    folder = "rotdPy"
+    if not os.path.exists(folder):
+        # Create a new directory because it does not exist
+        os.makedirs(folder)
     # Avoids modifying barrierless outside of the function
     barrierless = list(bless)
 
@@ -1377,10 +1381,8 @@ def create_rotdpy_inputs(par, bless, vdW) -> None:
 
         json_file = f"{reactant}/vrctst/corr_{reac_name}.json"
         if not os.path.isfile(json_file):
-            logger.warning(f"Results of scan for 1D correction\
-                            not found for rotdPy job {reac_name}")
-            raise KeyError(f"Results of scan for 1D correction\
-                            not found for rotdPy job {reac_name}")
+            logger.warning(f"Results of scan for 1D correction not found for rotdPy job {reac_name}")
+            raise KeyError(f"Results of scan for 1D correction not found for rotdPy job {reac_name}")
 
         with open(json_file, 'r') as jf:
             pp_info: dict[str, Any] = json.load(jf)
@@ -1468,10 +1470,7 @@ def create_rotdpy_inputs(par, bless, vdW) -> None:
             min_dist=par['vrc_tst_scan_points'][0],
             corrections_block=kb_1d_correction,
             inf_energy=inf_energy)
-        folder = "rotdPy"
-        if not os.path.exists(folder):
-            # Create a new directory because it does not exist
-            os.makedirs(folder)
+        
         with open(f"{folder}/{reac_name}.py", 'w') as f:
             f.write(new_input)
 
