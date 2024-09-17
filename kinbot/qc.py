@@ -724,6 +724,8 @@ class QuantumChemistry:
         job = f'vrctst/{str(frag.chemid)}_vts'
         mult = exceptions.get_multiplicity(frag.chemid, frag.mult)
         kwargs = self.get_qc_arguments(job, mult, frag.charge, vts=1)
+        # Add chk to fragments only
+        kwargs['chk'] = f'{str(frag.chemid)}_vts'
 
         if self.qc != 'gauss':
             raise ValueError(f'Only implemeted for Gaussian. Instead I got: {self.qc}')
@@ -747,6 +749,7 @@ class QuantumChemistry:
             f.write(template)
 
         self.submit_qc(job)
+
         return job
 
     def qc_vts(self, reac, geom, step, equiv, asymptote, step0_geom):
