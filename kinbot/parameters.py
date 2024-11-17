@@ -206,7 +206,7 @@ class Parameters:
             # Basis set to scan bonds in barrierless_saddle family
             'barrierless_saddle_basis_high': '6-31G',
             # for Gaussian, request CalcAll for TS optimization
-            'calcall_ts': 0,
+            'calcall_ts': 1,
             # Quantum chemistry method to use for high-level L2
             'high_level_method': 'M062X',
             # Basis set to use for high-level
@@ -300,6 +300,8 @@ class Parameters:
             'pp_on_COM': 10.0,
             # mode of pivot point placement. Accepted values are geometric and homo
             'pp_orient': 'homo',
+            # list of distances used for the surfaces
+            'rotdpy_dist': list(np.arange(3, 20.0, 0.2)),
 
             # COMPUTATIONAL ENVIRONEMNT
             # Which queuing system to use
@@ -526,6 +528,14 @@ class Parameters:
             for sp in self.par['vrc_tst_scan_points']:
                 tmp.append(list(np.arange(sp[0], sp[1], sp[2])))
             self.par['vrc_tst_scan_points'] = [i for sp in tmp for i in sp]
+        except (TypeError, IndexError):
+            pass
+        try:
+            self.par['rotdpy_dist'][0][0]
+            tmp = []
+            for sp in self.par['rotdpy_dist']:
+                tmp.append(list(np.arange(sp[0], sp[1], sp[2])))
+            self.par['rotdpy_dist'] = [i for sp in tmp for i in sp]
         except (TypeError, IndexError):
             pass
 

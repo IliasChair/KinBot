@@ -317,7 +317,6 @@ def postprocess(par, jobs, task, names, mass):
     failedwells = []
     bimol_products = []
 
-
     # list of reactions for which mp2 energies should be used at L1
     mp2_list = ['R_Addition_MultipleBond', 'reac_birad_recombination_R', 
                 'reac_r12_cycloaddition', 'reac_r14_birad_scission']
@@ -347,7 +346,7 @@ def postprocess(par, jobs, task, names, mass):
 
                 reactant = ji
                 #products this is the chemid of the product
-                if 'none' not in par['keep_chemids']:
+                if len(par['keep_chemids']) > 1:
                     if len(products) == 1 and products[0] not in par['keep_chemids']:
                         continue
                 # calculate the barrier based on the new energy base
@@ -380,7 +379,6 @@ def postprocess(par, jobs, task, names, mass):
                                                conf=par['conformer_search'])
                     barrier += ts_energy + ts_zpe
                 barrier *= constants.AUtoKCAL
-                    
                 if reactant not in wells:
                     wells.append(reactant)
                     parent[reactant] = reactant
@@ -1402,7 +1400,7 @@ def create_rotdpy_inputs(par, bless, vdW) -> None:
                                       parent=str(reactant),
                                       mult=pp_info['frags_mult'][frag_num]))
 
-        fragnames = Fragment.get_fragnames()
+        fragnames: list[str] = Fragment.get_fragnames()
 
         # Set the pivot points on each fragments and create the surfaces
         surfaces: list[VRC_TST_Surface] = []
@@ -1412,7 +1410,7 @@ def create_rotdpy_inputs(par, bless, vdW) -> None:
         sf: list[list[int]]
         surfs: list[VRC_TST_Surface]
 
-        for dist in par['vrc_tst_scan_points']:
+        for dist in par['rotdpy_dist']:
             if dist < vrc_tst_start:
                 logger.info(f"Removing sampling surface {dist} for reaction {reac_name}")
                 continue
@@ -1422,6 +1420,9 @@ def create_rotdpy_inputs(par, bless, vdW) -> None:
                     equiv_ra=pp_info['unique'],
                     fragments=fragments,
                     par=par)
+                # for sur in surfs:
+                #     if any(sur.dist_matrix <= pp_info['smallest']):
+                #         logger.warning(f'Surface {sur.id} is not on the reaction coordinate.')
                 surfaces.extend(surfs)
                 faces_weights.extend(fw)
                 selected_faces.extend(sf)
@@ -1472,7 +1473,7 @@ def create_rotdpy_inputs(par, bless, vdW) -> None:
             min_dist=par['vrc_tst_scan_points'][0],
             corrections_block=kb_1d_correction,
             inf_energy=inf_energy)
-        
+
         with open(f"{folder}/{reac_name}.py", 'w') as f:
             f.write(new_input)
 

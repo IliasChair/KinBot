@@ -1,4 +1,3 @@
-import rmsd
 import os
 from typing import Any
 from kinbot import kb_path
@@ -13,6 +12,7 @@ import logging
 import copy
 import math
 from kinbot.constants import BOHRtoANGSTROM
+from kinbot.utils import reorder_coord
 
 logger = logging.getLogger('KinBot')
 
@@ -68,12 +68,14 @@ class Fragment(StationaryPoint):
         self.geom = np.array(geom)
 
         self.recentre()
-        if abs(np.prod(self.atoms.get_moments_of_inertia())) < 1e-6:
+        self.frag_name: str
+        if len(self.geom) == 1:
+            self.frag_type = 'Monoatomic'
+        elif abs(np.prod(self.atoms.get_moments_of_inertia())) < 1e-6:
             self.frag_type = 'Linear'
         else:
             self.frag_type = 'Nonlinear'
 
-        self.frag_name: str
         Fragment.set_fragnames(self)
 
         super(Fragment, self).__init__(name=self.frag_name,
@@ -550,6 +552,13 @@ class Fragment(StationaryPoint):
             raise TypeError('HOMO mode selected for pivot point orientation, but cubefile is not available.')
         step: NDArray[float32] = np.zeros(3, dtype=float32)
         dim: NDArray[int16] = np.zeros(3, dtype=int16)
+        elements: list[str] = []
+        num2str: dict[str, str] = {
+            '1': 'H',
+            '6': 'C',
+            '7': 'N',
+            '8': 'O',
+            '16': 'S'}
         # Saves info from the header: step size, origin and dimension
         for ln, line in enumerate(cubefile):
             if ln == 2:
@@ -573,8 +582,9 @@ class Fragment(StationaryPoint):
                 continue
             # Save the cube geometry
             elif ln > 5 and ln <= 5 + natm:
-                x, y, z = line.split()[2:]
+                num, _, x, y, z = line.split()
                 cube_geom[ln-6] = np.array([x, y, z], dtype=float32)
+                elements.append(num2str[num])
             elif ln > 5 and len(line.split()) == 2:
                 start: int = ln + 1
                 break
@@ -590,16 +600,20 @@ class Fragment(StationaryPoint):
         xsize = int(ysize*dim[1])
 
         # Change the geom for the one in the cube to ensure same orientation
-        self.geom = cube_geom
+        tmp_atm = Atoms(elements, positions=cube_geom)
+        tmp_stp = StationaryPoint.from_ase_atoms(tmp_atm)
+        tmp_stp.characterize()
+        reorder_coord(self, tmp_stp)
+        self.geom = tmp_stp.geom
         self.recentre()
 
-        for eq in self.equiv:
-            if index in eq:
-                to_integrate: list[int] = eq
-                break
+        # for eq in self.equiv:
+        #     if index in eq:
+        #         to_integrate: list[int] = eq
+        #         break
 
         # max_integral = -1
-        max_var: float = np.inf
+        # max_var: float = np.inf
         # all_orient = []
         
 

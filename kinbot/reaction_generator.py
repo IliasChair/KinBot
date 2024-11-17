@@ -15,10 +15,12 @@ from kinbot import reac_family
 from kinbot import cheminfo
 from kinbot.irc import IRC
 from kinbot.optimize import Optimize
+from kinbot.reac_General import GeneralReac
 from kinbot.stationary_pt import StationaryPoint
 from kinbot.molpro import Molpro
 from ase.db import connect
 from ase import Atoms
+from kinbot.utils import reorder_coord
 
 
 logger = logging.getLogger('KinBot')
@@ -279,14 +281,14 @@ class ReactionGenerator:
 
                         self.equate_identical(obj.products)
                         obj.valid_prod = len(obj.products) * [True]
-                        
-                        #make the geom of productss in frag_unique the one from the multi_molecular (not optimized)
-                        self.equate_unique(obj.products, frag_unique) 
+
+                        # make the geom of products in frag_unique the one from the multi_molecular (not optimized)
+                        self.equate_unique(obj.products, frag_unique)
                         obj.prod_done = 1
 
                     for frag in obj.products:
                         self.qc.qc_opt(frag, frag.geom)
-                        e, _ = self.qc.get_qc_geom(str(frag.chemid) + '_well', frag.natom) #check if finished without updating geom
+                        e, _ = self.qc.get_qc_geom(str(frag.chemid) + '_well', frag.natom) # check if finished without updating geom
                         if e == 1:  # it's running
                             continue
 
@@ -299,11 +301,15 @@ class ReactionGenerator:
                             logger.info(f'Product in {obj.instance_name} is identical to the reactant. Reaction deleted.')
                             self.species.reac_ts_done[index] = -999 
                             break
-                        elif not obj.valid_prod[fragii]:  # do not look at already invalid fragments again
+                        # do not look at already invalid fragments again
+                        elif not obj.valid_prod[fragii]:
                             ndone += 1
                             continue
                         chemid_orig = frag.chemid
-                        e, frag.geom = self.qc.get_qc_geom(str(frag.chemid) + '_well', frag.natom)
+                        e, frag.geom, frag.atom = self.qc.get_qc_geom(
+                            str(frag.chemid) + '_well',
+                            frag.natom,
+                            reorder=True)
                         if e < 0:
                             logger.info(f'\tProduct optimization failed for {obj.instance_name}, product {frag.chemid}')
                             self.species.reac_ts_done[index] = -999
@@ -316,8 +322,10 @@ class ReactionGenerator:
                             _, frag.zpe = self.qc.get_qc_zpe(str(frag.chemid) + '_well')
                             if self.species.reac_type[index] == 'hom_sci': # TODO energy is the sum of all possible fragments  
                                 hom_sci_energy += frag.energy + frag.zpe
-                            frag.characterize()  
-                            if chemid_orig != frag.chemid:  # connectivity changed
+                            # Reinitialize rads and bonds
+                            frag.reset_order()
+                            # connectivity changed
+                            if chemid_orig != frag.chemid:
                                 for fri, fr in enumerate(obj.products):
                                     if fr.chemid == chemid_orig:
                                         obj.valid_prod[fri] = False
@@ -334,6 +342,10 @@ class ReactionGenerator:
                                     if fr.chemid == chemid_orig:
                                         obj.products[fri].energy = frag.energy
                                         obj.products[fri].zpe = frag.zpe
+                                        # Reorder the coordinates of frag in case the atom order is different
+                                        if any(obj.products[fri].atom != frag.atom):
+                                            reorder_coord(mol_A=obj.products[fri],
+                                                          mol_B=frag)
                                         obj.products[fri].geom = frag.geom
 
                     if ndone == len(obj.products) and self.species.reac_ts_done[index] != -999:  # all currently recognized fragments are done
@@ -403,7 +415,15 @@ class ReactionGenerator:
 
                 elif self.species.reac_ts_done[index] == 3:
                     for frag in obj.products:
-                        e, frag.geom = self.qc.get_qc_geom(str(frag.chemid) + '_well', frag.natom)
+                        # # Reordering in case different fragment
+                        e, frag.geom, frag.atom = self.qc.get_qc_geom(
+                            str(frag.chemid) + '_well',
+                            frag.natom,
+                            reorder=True)
+                        # Create a new stp instead of updating geom and atom
+                        # because rads and bonds need to be changed
+                        frag.reset_order()
+                        # e, frag.geom = self.qc.get_qc_geom(str(frag.chemid) + '_well', frag.natom)
 
                     # Do the TS and product optimization
                     # make a stationary point object of the ts

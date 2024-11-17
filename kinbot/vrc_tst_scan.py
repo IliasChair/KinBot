@@ -1,3 +1,4 @@
+from operator import ne
 from typing import Any
 import numpy as np
 import time
@@ -10,6 +11,7 @@ import json
 from ase.db import connect
 from shutil import which
 from subprocess import Popen, PIPE
+from kinbot.utils import reorder_coord
 from kinbot.stationary_pt import StationaryPoint
 from kinbot import geometry
 from kinbot.molpro import Molpro
@@ -93,13 +95,16 @@ class VTS:
             for prod in self.scan_reac[reac].products:
                 # read geom
                 job = f'vrctst/{str(prod.chemid)}_vts'
-                status, geom = self.qc.get_qc_geom(job,
-                                                   prod.natom,
-                                                   wait=1,
-                                                   allow_error=1)
+                status, geom, atoms = self.qc.get_qc_geom(
+                    job,
+                    prod.natom,
+                    wait=1,
+                    allow_error=1,
+                    reorder=True)
                 # update geom in self.scan_reac[reac] values,
                 # this already saves it
                 prod.geom = geom
+                prod.atom = atoms
                 if status == 0:
                     # Check if commands are available
                     commands = ['formchk', 'cubegen']
@@ -141,8 +146,6 @@ class VTS:
                                 out = out.decode()
                             else:
                                 logger.warning(f"Cannnot create cube file for {job} as formated checkpoint file doesn't exist.")
-
-
         return
 
     def find_scan_coos(self, reactions):
@@ -238,7 +241,7 @@ class VTS:
 
         return
 
-    def match_order(self, reac):
+    def match_order(self, reac) -> None:
         '''
         Keeps the object to be scanned intact, but rearranges the products
         and the atoms in the products so that:
@@ -262,21 +265,12 @@ class VTS:
         # match atom ordering of individual products
         # with scanned fragment's atom order
         for fi, frag in enumerate(self.scan_reac[reac].parts):
-            for ii, aid in enumerate(frag.atomid):
-                if aid != self.scan_reac[reac].products[fi].atomid[ii]:
-                    # swap to something that works
-                    pos = self.scan_reac[reac].\
-                        products[fi].atomid[ii:].index(aid)
-                    # need to swap atom and geom
-                    self.scan_reac[reac].products[fi].geom[ii], \
-                        self.scan_reac[reac].products[fi].geom[pos] = \
-                        self.scan_reac[reac].products[fi].geom[pos], \
-                        self.scan_reac[reac].products[fi].geom[ii]
-                    self.scan_reac[reac].products[fi].atom[ii], \
-                        self.scan_reac[reac].products[fi].atom[pos] = \
-                        self.scan_reac[reac].products[fi].atom[pos], \
-                        self.scan_reac[reac].products[fi].atom[ii]
-                    self.scan_reac[reac].products[fi].characterize()
+            self.scan_reac[reac].products[fi].reset_order()
+            # This reorders the map so that if fits products and not parts
+            self.scan_reac[reac].maps[fi] = reorder_coord(
+                mol_A=self.scan_reac[reac].products[fi],
+                mol_B=frag,
+                map_B=self.scan_reac[reac].maps[fi])
         return
 
     def do_scan(self, reactions):
@@ -336,6 +330,18 @@ class VTS:
                     for mi in self.scan_reac[reac].maps[1]:
                         geoms[ri][mi] = [gi + shift[i]
                                          for i, gi in enumerate(geoms[ri][mi])]
+                    new_distAB = np.linalg.norm(
+                        geoms[ri][self.scan_reac[reac].scan_coo[0]] - 
+                        geoms[ri][self.scan_reac[reac].scan_coo[1]])
+                    # Temporary fix in case shift is in wrong direction
+                    if step[ri] != 0 and step[ri] < len(self.par['vrc_tst_scan_points']):
+                        if (new_distAB < dist_AB and\
+                           self.par['vrc_tst_scan_points'][step[ri]] > self.par['vrc_tst_scan_points'][step[ri] -1]) or\
+                           (new_distAB > dist_AB and\
+                           self.par['vrc_tst_scan_points'][step[ri]] < self.par['vrc_tst_scan_points'][step[ri] -1]):
+                            for mi in self.scan_reac[reac].maps[1]:
+                                geoms[ri][mi] = [gi - 2*shift[i]
+                                                for i, gi in enumerate(geoms[ri][mi])]
                     if step[ri] == 0:
                         # determine equivalent atoms
                         equiv_A = []
@@ -559,6 +565,10 @@ class VTS:
                                         data_legends=['sample', 'high'],
                                         )
 
+                smallest = np.linalg.norm(
+                    self.well.geom[self.scan_reac[reac].equiv[0][0]] -
+                    self.well.geom[self.scan_reac[reac].equiv[1][0]])
+
                 # write small file with correction data
                 corr: dict[str, Any] = {
                     'dist': dist,
@@ -566,6 +576,7 @@ class VTS:
                     'e_high': ens[1],
                     'scan_ref': scan_ref,
                     'ra': ra,
+                    'smallest': smallest,
                     'unique': self.scan_reac[reac].usym,
                     'e_inf_samp': asyms[0],
                     'e_inf_high': asyms[1],
