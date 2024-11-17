@@ -1,220 +1,146 @@
-import os
-from pathlib import Path
-import warnings
-
-import numpy as np
-import torch
-from ase import Atoms
+# from ocpmodels.common.relaxation.ase_utils import OCPCalculator
+from fairchem.core.common.relaxation.ase_utils import OCPCalculator
 from ase.calculators.calculator import Calculator, all_changes
+import numpy as np
 
-from util import util_path
-from util.data import data
-import util.nn.pes_compNet_multifid as pes
-from util.sfi import daev
+from aimnet import load_AIMNetMT_ens, load_AIMNetSMD_ens, AIMNetCalculator
 
-os.environ['KMP_DUPLICATE_LIB_OK']='True'
+element_specific_energies = {
+    # energies in Hartree at coupled cluster cc-pCVTZ level
+    # from https://cccbdb.nist.gov/
+    "H": -0.497449,
+    "C": -37.827545,
+    "N": -54.571306,  # composite method G4
+    "O": -75.028319,
+    "S": -397.983905,
+}
 
 
 class Nn_surr(Calculator):
-    implemented_properties = ['energy', 'forces']
+    implemented_properties = ["energy", "forces"]
 
-    def __init__(self, fname, restart=None, ignore_bad_restart_file=False, 
-                 label='surrogate', atoms=None, tnsr=False, **kwargs):
-        Calculator.__init__(self, restart=restart, 
-                            ignore_bad_restart_file=ignore_bad_restart_file, 
-                            label=label,
-                            atoms=atoms, tnsr=tnsr, **kwargs)
-        if isinstance(fname, list) and fname.__len__() > 1:
-            self.multinn = True
-        else:
-            self.multinn = False
-        self.surrogate = Nnpes_calc(fname, self.multinn)
-        self.tnsr = tnsr
-    
-    def calculate(self, atoms=None, properties=['energy', 'forces'], 
-                  system_changes=all_changes, loaddb=None, args=None, xid=None):
+    def __init__(
+        self,
+        fname="NNPES",
+        restart=None,
+        ignore_bad_restart_file=False,
+        label="surrogate",
+        atoms=None,
+        tnsr=False,
+        **kwargs,
+    ):
+        Calculator.__init__(
+            self, restart=restart, label=label, atoms=atoms, tnsr=tnsr, **kwargs
+        )
+
+        # expensive calculator for forces and energy only instantiated when needed
+        self.expensive_force_calculator = None
+        # cheap calculator for energy only
+        self.cheap_energy_calculator = self.get_cheap_energy_calculator()
+
+    def get_cheap_energy_calculator(self):
+        model_gas = load_AIMNetMT_ens()
+        model_smd = load_AIMNetSMD_ens()
+
+        energy_calc = AIMNetCalculator(model_gas)
+
+        return energy_calc
+
+    def get_expensive_force_calculator(self):
+        root = "/hpcwork/zo122003/BA/"
+        # calculators = {"2M":               f"{root}rundir_2M/DeNS_output/checkpoints/2024-08-29-21-58-56/best_checkpoint.pt",
+        #                "Main":             f"{root}rundir/DeNS_output/checkpoints/2024-08-27-23-34-56/best_checkpoint.pt",
+        #                "energy":           f"{root}rundir_energy_forces/energy/DeNS_output/checkpoints/2024-09-02-14-58-40/best_checkpoint.pt",
+        #                "ANI-1x_energy":    f"{root}rundir_energy_forces/true_energy/DeNS_output/checkpoints/2024-09-14-17-17-20/best_checkpoint.pt",
+        #                "forces":           f"{root}rundir_energy_forces/forces/DeNS_output/checkpoints/2024-09-02-02-10-40/best_checkpoint.pt",
+        #                "ANI-2x":           f"{root}rundir_ANI-2x/DeNS_output/checkpoints/2024-09-08-22-54-24/best_checkpoint.pt",
+        #                "ANI-2x_restart":   f"{root}rundir_ANI-2x/DeNS_output/checkpoints/2024-09-12-13-31-12/best_checkpoint.pt",
+        #                "ANI-2x_energy":    f"{root}rundir_ANI-2x/energy_only/DeNS_output/checkpoints/2024-09-14-17-10-56/best_checkpoint.pt",}
+        calculators = {
+            "main": f"{root}rundir__no_pbc/out/checkpoints/2024-11-14-10-10-24/best_checkpoint.pt",
+        }
+
+        force_energy_calc = OCPCalculator(
+            checkpoint_path=calculators["main"],
+            cutoff=12.0,
+            max_neighbors=20,
+            cpu=True,
+            seed=42,
+        )
+        return force_energy_calc
+
+    def calculate(
+        self,
+        atoms=None,
+        properties=["energy", "forces"],
+        system_changes=all_changes,
+        loaddb=None,
+        args=None,
+        xid=None,
+    ):
         Calculator.calculate(self, atoms, properties, system_changes)
-        if 'forces' in properties:
-            favail = True
-        else:
-            favail = False
+        # Update atoms object if it's provided and changed
+        if atoms is not None and self.atoms is not atoms:
+            self.set_atoms(atoms)
 
-        xyzd = [[[s for s in atoms.symbols], np.array(atoms.positions)]]
-        self.surrogate.dpes.aev_from_xyz(xyzd, 32, 8, 8, [4.6,3.1], False, 
-                                         self.surrogate.myaev)
-        self.surrogate.nforce = self.surrogate.dpes.full_symb_data[0].__len__() * 3
+        # Invoke surrogate models to predict energy and forces
+        if "energy" in properties:
+            self.results["energy"] = self.get_potential_energy()
 
-        if self.multinn:
-            energy, Estd, E_hf = self.surrogate.eval()
-            if favail:
-                force, Fstd, force_ind = self.surrogate.evalforce()
-        else:
-            energy = self.surrogate.eval()[0][0]
-            Estd = torch.tensor(0.)
-            if favail:
-                force = self.surrogate.evalforce()
-                Fstd = torch.tensor(0.)
+        if "forces" in properties:
+            self.results["forces"] = self.get_forces()
 
-        if self.tnsr:
-            self.results['energy'] = energy
-            self.results['energy_std'] = Estd
-            if self.multinn:
-                self.results['all_energies'] = E_hf
-            if favail:
-                self.results['forces'] = force.view(-1, 3)
-                self.results['forces_std'] = Fstd
-                if self.multinn:
-                    self.results['all_forces'] = force_ind
-        else:
-            self.results['energy'] = float(energy)
-            self.results['energy_std'] = Estd.detach().numpy()
-            if self.multinn:
-                self.results['all_energies'] = E_hf.detach().numpy()
-            if favail:
-                self.results['forces'] = np.reshape(force.detach().numpy(), 
-                                                    (-1, 3))
-                self.results['forces_std'] = Fstd.detach().numpy()
-                if self.multinn:
-                    self.results['all_forces'] = force_ind.detach().numpy()
+    def get_potential_energy(self, atoms=None):
+        # Update atoms object if it's provided and changed
+        if atoms is not None:
+            self.atoms = atoms
 
+        # treat the case in which atoms only consists of one element explicitly
+        if len(self.atoms) == 1:
+            energy = element_specific_energies[self.atoms.get_chemical_symbols()[0]]
+            # convert hartree to eV
+            energy = energy * 27.211386245988
+            return energy
 
-class My_args():
+        # for some systems the AIMNet model is not able to predict the energy
+        # in this case, we use the EquiformerV2 model to predict the energy
+        try:
+            # if the calculator returns an array, we have to convert it to a float using .item()
+            energy = self.cheap_energy_calculator.get_potential_energy(
+                self.atoms
+            ).item()
 
-    def __init__(self, nntype, model_name, fid):
-        self.nntype = [nntype]
-        if model_name is None:
-            self.load_model = False
-        else:
-            if isinstance(model_name, list):
-                self.load_model_name = model_name
-            else:
-                self.load_model_name = [model_name]
-        self.fid = [fid]
-        self.nw = True
-        self.savepth = None
-        self.savepth_pars = None
-        self.device = torch.device('cpu')
+            return energy
+        except:
+            if self.expensive_force_calculator is None:
+                self.expensive_force_calculator = self.get_expensive_force_calculator()
 
-class Nnpes_calc():
+            energy = self.expensive_force_calculator.get_potential_energy(self.atoms)
 
-    def __init__(self, fname, multinn=False):
-        self.dpes = data.Data_pes(['C', 'H'])
-        self.myaev = self.dpes.prep_aev()
-        if multinn:
-            self.nmodel = fname.__len__()
-            options = [My_args('Comp', fnm, 'hfonly') for fnm in fname]
-            self.dpes.device = options[0].device
-            self.nn_pes = [pes.prep_model(True, opts, load_opt=False) 
-                           for opts in options]
-        else:
-            self.nmodel = 1
-            options = My_args('Comp', fname, 'hfonly')
-            self.dpes.device = options.device
-            self.nn_pes = pes.prep_model(True, options, load_opt=False)
-            #print('SAE energies: ', self.nn_pes.sae_energies)
+            # convert to float64
+            energy = energy.astype(np.float64)
+            # convert to eV
+            energy = energy * 27.211386245988
+            return energy
 
-    def eval(self, indvout=False):
-        idl = list(range(0, self.dpes.ndat))
-        self.dpes.prep_data(idl)
-        self.dpes.indvout = indvout
-        self.dpes.ymax = np.max([y[-1] for y in self.dpes.xdat])
-        self.dpes.ymin = np.min([y[-1] for y in self.dpes.xdat])
-        self.dpes.xb = [[xt.requires_grad_() for xt in self.dpes.xb[b]] 
-                        for b in range(self.dpes.nbt)]
-        if self.nmodel == 1:
-            self.E_lf, self.E_hf = self.nn_pes.eval_dl(self.dpes)
-            E_pred = self.E_hf
-            return E_pred
-        else:
-            self.E_hf = torch.empty((self.dpes.ndat, self.nmodel))
-            for i in range(self.nmodel):
-                E_lf, E_hf = self.nn_pes[i].eval_dl(self.dpes)
-                self.E_hf[:, i] = E_hf.reshape(-1)
-            E_pred = torch.mean(self.E_hf)
-            Estd = torch.std(self.E_hf, 1)
-            return E_pred, Estd, self.E_hf
+    def get_forces(self, atoms=None):
+        # Update atoms object if it's provided and changed
+        if atoms is not None:
+            self.atoms = atoms
 
-    def evalgrad(self):
-        if self.nmodel == 1:
-            dEdxyz = daev.cal_dEdxyz_dl(self.dpes, self.E_hf)[0]
-            return dEdxyz
-        else:
-            dEdxyz = torch.empty((self.dpes.ndat, self.nmodel, self.nforce))
-            for i in range(self.nmodel):
-                tmp = daev.cal_dEdxyz_dl(self.dpes, self.E_hf[:, i])[0]
-                dEdxyz[:, i] = tmp
-            gmean = torch.mean(dEdxyz, 1).reshape(-1)
-            gstd  = torch.std(dEdxyz, 1).reshape(-1)
-            return gmean, gstd, dEdxyz
+        # treat the case in which atoms only consists of one element explicitly
+        if len(self.atoms) == 1:
+            forces = np.zeros((1, 3), dtype=np.float64)
+            return forces
 
-    def evalforce(self):
-        if self.nmodel == 1:
-            gradient = self.evalgrad()
-            return -gradient
-        else:
-            gmean, gstd, dEdxyz = self.evalgrad()
-            return -gmean, gstd, -dEdxyz
+        # if expensive_force_calculator has not been initialized, initialize it
+        if self.expensive_force_calculator is None:
+            self.expensive_force_calculator = self.get_expensive_force_calculator()
 
+        forces = self.expensive_force_calculator.get_forces(self.atoms).astype(
+            np.float64
+        )
 
-def main():
-    # set default pytorch as double precision
-    torch.set_default_dtype(torch.float64)
-
-    torch.set_printoptions(precision=12)
-
-    home = str(Path.home())
-
-    nn1 = home+'/mls/util/models/AL/C5H5-2b2IRC1ts_full/run1-1/C5H5_lf_reddb_2w2IRC1ts_20k_rand0-29540.pt'
-    nn2 = home+'/mls/util/models/AL/C5H5-2b2IRC1ts_full/run1-1/C5H5_lf_reddb_2w2IRC1ts_20k_rand1-29260.pt'
-    nn3 = home+'/mls/util/models/AL/C5H5-2b2IRC1ts_full/run1-1/C5H5_lf_reddb_2w2IRC1ts_20k_rand2-29115.pt'
-    nn4 = home+'/mls/util/models/AL/C5H5-2b2IRC1ts_full/run1-1/C5H5_lf_reddb_2w2IRC1ts_20k_rand3-0005.pt'
-    nn5 = home+'/mls/util/models/AL/C5H5-2b2IRC1ts_full/run1-1/C5H5_lf_reddb_2w2IRC1ts_20k_rand4-2500.pt'
-
-    # import glob
-    # fn_nn = glob.glob('../../models/AL/C5H5-2b2IRC1ts_smallset/run0/*')
-    # fn_nn = ['comp-0010.pt', 'comp-0010.pt']
-
-    fn_nn = [nn1, nn2, nn3, nn4, nn5]
-
-
-    #atoms = Atoms(['C', 'H', 'C'],
-    #              [(1.734285, 1.257951, 0.130304), 
-    #               (3.016641, 1.515035, 0.130976), 
-    #               (1.617565, -0.19116, -0.177416)])
-
-    xyz_db = [[
-        ['C', 'H', 'C'],
-        np.array([[1.734285, 1.257951, 0.130304], 
-                  [3.016641, 1.515035, 0.130976], 
-                  [1.617565, -0.19116, -0.177416]])
-    ]]
-
-    # simple test
-    for nn in fn_nn:
-        print("nn:",nn)
-        surr  = Nn_surr(nn,tnsr=False)
-        for xyz in xyz_db:
-            atoms = Atoms(xyz[0], xyz[1])
-            atoms.set_calculator(surr)
-            surr.calculate(atoms)
-            print('System:',atoms)
-            print('Energy:', surr.results['energy'])
-            print('Forces:\n', surr.results['forces'])
-            print('Numerical forces with ASE:\n', 
-                  surr.calculate_numerical_forces(atoms))
-
-    print("avg nn:")
-    surr  = Nn_surr(fn_nn,tnsr=False)
-    for xyz in xyz_db:
-        atoms = Atoms(xyz[0], xyz[1])
-        atoms.set_calculator(surr)
-        surr.calculate(atoms)
-        print('System:',atoms)
-        print('Energy:', surr.results['energy'])
-        print('Forces:\n', surr.results['forces'])
-        print('Numerical forces with ASE:\n', 
-              surr.calculate_numerical_forces(atoms))
-
-
-if __name__ == "__main__":
-    main()
+        # convert Hartree/Angstrom to eV/Angstrom
+        forces = forces * 27.211386245988
+        return forces
