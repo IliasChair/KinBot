@@ -12,7 +12,7 @@ from typing import List, Optional, Dict
 from aimnet import load_AIMNetMT_ens, load_AIMNetSMD_ens, AIMNetCalculator
 from ase.atoms import Atoms
 from fairchem.core.models.model_registry import model_name_to_local_file
-
+from warnings import warn
 
 ELEMENT_ENERGIES = {
     # energies in Hartree at coupled cluster cc-pCVTZ level
@@ -28,11 +28,12 @@ ROOT_PATH = Path("/hpcwork/zo122003/BA/")
 CUTOFF = 15.0
 MAX_NEIGHBORS = 60
 HARTREE_TO_EV = 27.211386245988
+#HARTREE_TO_EV = 1.0
 
 class Nn_surr(Calculator):
     """Neural Network calculator implementing both cheap energy and expensive force calculations."""
     implemented_properties: ClassVar[list[str]] = ["energy", "forces"]
-
+    WARN_FIRST_TIME: ClassVar[bool] = True
     def __init__(self) -> None:
         Calculator.__init__(self)
         self._energy_calculator = None
@@ -66,16 +67,19 @@ class Nn_surr(Calculator):
         model_name_to_local_file, local_cache="/hpcwork/zo122003/BA/models"
         )
         calculators = {
-            "main": ROOT_PATH / "rundir__no_pbc/out/checkpoints/2024-11-14-10-10-24/best_checkpoint.pt",
-            "checkpoint_latest2": ROOT_PATH / "rundir__no_pbc/out/checkpoints/2024-11-20-15-36-48/best_checkpoint.pt",
-            "checkpoint_latest": ROOT_PATH / "rundir__no_pbc/out/checkpoints/2024-11-20-15-36-48/best_checkpoint_copy.pt",
-            "EquiformerV2-lE4-lF100-S2EFS-OC22": get_model("EquiformerV2-lE4-lF100-S2EFS-OC22"),
-            "EquiformerV2-83M-S2EF-OC20-2M": get_model("EquiformerV2-83M-S2EF-OC20-2M"),
-            "EquiformerV2-31M-S2EF-OC20-All+MD": get_model("EquiformerV2-31M-S2EF-OC20-All+MD"),
-            "EquiformerV2-153M-S2EF-OC20-All+MD": get_model("EquiformerV2-153M-S2EF-OC20-All+MD"),
+            "main": ROOT_PATH / "rundir/out/checkpoints/2024-12-06-11-20-48/best_freq_rmse_checkpoint.pt",
+            "main_2": ROOT_PATH / "/hpcwork/zo122003/BA/rundir/out/checkpoints/2024-12-09-13-03-12/best_freq_rmse_checkpoint.pt",
+            "small": ROOT_PATH / "rundir/out/checkpoints/2024-12-09-16-49-20/best_freq_rmse_checkpoint.pt",
+            "small2": ROOT_PATH / "rundir/out/checkpoints/2024-12-11-14-09-20/best_freq_rmse_checkpoint.pt",
+            "small3": ROOT_PATH / "rundir/out/checkpoints/2024-12-10-17-36-16/best_freq_rmse_checkpoint.pt",
+            "mini": ROOT_PATH / "rundir_small/out/checkpoints/2024-12-12-12-44-00/best_freq_rmse_checkpoint.pt",
+            "minier": ROOT_PATH / "rundir_smaller/out/checkpoints/2024-12-12-15-45-20/best_freq_rmse_checkpoint.pt",
+            "small_success": ROOT_PATH / "rundir_small/out/checkpoints/2024-12-16-19-25-04/best_freq_rmse_checkpoint.pt",
+            "smaller_success": ROOT_PATH / "rundir_smaller/out/checkpoints/2024-12-16-19-22-56/best_freq_rmse_checkpoint.pt",
+            "best_no_dens": ROOT_PATH / "rundir_smaller/out/checkpoints/2024-12-26-10-42-24/best_freq_rmse_checkpoint.pt",
         }
 
-        return self._create_ocp_calculator(calculators["checkpoint_latest"])
+        return self._create_ocp_calculator(calculators["best_no_dens"])
 
     def _create_ocp_calculator(self, checkpoint_path: Path) -> 'Calculator':
         """Creates an OCP calculator with suppressed output."""
@@ -99,10 +103,16 @@ class Nn_surr(Calculator):
         self.results["energy"] = self.get_potential_energy(atoms=atoms)
         self.results["forces"] = self.get_forces(atoms=atoms)
 
-    def get_potential_energy(self, atoms=None):
+    def get_potential_energy(self, atoms=None, force_consistent=False):
         # Update atoms object if it's provided and changed
         if atoms is not None:
             self.atoms = atoms
+
+        # print warning if force_consistent is set to True
+        if force_consistent and self.WARN_FIRST_TIME:
+            self.WARN_FIRST_TIME = False
+            print("force_consistent was set to True, but this calculator does "
+                  "not support it.")
 
         # treat the case in which atoms only consists of one element explicitly
         if len(self.atoms) == 1:
@@ -132,3 +142,18 @@ class Nn_surr(Calculator):
         return self.force_calculator.get_forces(self.atoms).astype(
             np.float64
         ) * HARTREE_TO_EV
+
+def get_calculator():
+    """
+    Get a Neural Network Surrogate calculator instance.
+
+    This is a wrapper/modification of an ASE calculator implementation that provides
+    a neural network surrogate model for potential energy surface predictions.
+
+    Returns
+    -------
+    Nn_surr
+        Instance of the Neural Network Surrogate calculator class
+    """
+
+    return Nn_surr()
