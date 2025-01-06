@@ -5,6 +5,7 @@ import numpy as np
 from ase import Atoms
 from ase.db import connect
 from ase.vibrations import Vibrations
+from ase.calculators.gaussian import Gaussian
 from sella import Sella
 
 from kinbot.constants import EVtoHARTREE
@@ -14,6 +15,14 @@ from kinbot.frequencies import get_frequencies
 
 
 def calc_vibrations(mol):
+        mol.calc = Gaussian(
+            mem='8GB',
+            nprocshared=1,
+            method='b3lyp',
+            basis='tzvp',
+            chk="{label}.chk",
+            label="{label}",
+        )
         mol.calc.label = '{label}_vib'
         if 'chk' in mol.calc.parameters:
             del mol.calc.parameters['chk']
