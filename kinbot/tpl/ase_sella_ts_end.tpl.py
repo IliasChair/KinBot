@@ -19,9 +19,10 @@ def calc_vibrations(mol):
         mem='8GB',
         nprocshared=1,
         method='b3lyp',
-        basis='tzvp',
+        basis='6-31G(d)',
         chk="{label}.chk",
         label="{label}",
+        mult=2
     )
     mol.calc.label = '{label}_vib'
     if 'chk' in mol.calc.parameters:
