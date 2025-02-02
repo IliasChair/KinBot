@@ -14,44 +14,47 @@ from kinbot.modify_geom import modify_coordinates
 from kinbot.ase_modules.calculators.{code} import {Code}
 from kinbot.stationary_pt import StationaryPoint
 from kinbot.frequencies import get_frequencies
+import cclib
 
 def calc_vibrations(mol):
+    mol = mol.copy()
     mol.calc = Gaussian(
         mem='8GB',
         nprocshared=1,
-        method='b3lyp',
-        basis='6-31G(d)',
+        method='wb97xd',
+        basis='tzvp',
         chk="{label}.chk",
-        label="{label}",
+        freq='',
         mult=2
     )
     mol.calc.label = '{label}_vib'
     if 'chk' in mol.calc.parameters:
         del mol.calc.parameters['chk']
-    # Compute frequencies in a separate temporary directory to avoid 
+    # Compute frequencies in a separate temporary directory to avoid
     # conflicts accessing the cache in parallel calculations.
     if not os.path.isdir('{label}_vib'):
         os.mkdir('{label}_vib')
     init_dir = os.getcwd()
     os.chdir('{label}_vib')
-    if os.path.isdir('vib'):
-        shutil.rmtree('vib')
-    vib = Vibrations(mol)
-    vib.run()
-    # Use kinbot frequencies to avoid mixing low vib frequencies with 
-    # the values associated with external rotations.
-    _ = vib.get_frequencies()
-    zpe = vib.get_zero_point_energy() * EVtoHARTREE
-    hessian = vib.H / 97.17370087
-    st_pt = StationaryPoint.from_ase_atoms(mol)
-    st_pt.characterize()
-    freqs, _ = get_frequencies(st_pt, hessian, st_pt.geom)
+
+
+    mol.get_potential_energy()
+
+    file_path = '{label}_vib.log'
+    parsed_data = cclib.io.ccopen(file_path).parse()
+
+
+    freqs = parsed_data.vibfreqs
+    zpe = parsed_data.zpve
+    hessian = parsed_data.vibdisps
+
     os.chdir(init_dir)
     shutil.rmtree('{label}_vib')
     return freqs, zpe, hessian
 
+
 db = connect('{working_dir}/kinbot.db')
-mol = Atoms(symbols={atom}, 
+mol = Atoms(symbols={atom},
             positions={geom})
 
 kwargs = {kwargs}
@@ -81,7 +84,7 @@ for c in {change}:
     c_new.append(c[-1])
     base_0_changes.append(c_new)
 if len(base_0_changes) > 0:
-    _, mol.positions = modify_coordinates(st_pt, '{label}', mol.positions, 
+    _, mol.positions = modify_coordinates(st_pt, '{label}', mol.positions,
                                            base_0_changes, st_pt.bond)
 for change in base_0_changes:
     if len(change[:-1]) == 2:
@@ -98,9 +101,9 @@ if os.path.isfile('{label}_sella.log'):
 
 order = {order}
 sella_kwargs = {sella_kwargs}
-opt = Sella(mol, 
-            order=order, 
-            trajectory='{label}.traj', 
+opt = Sella(mol,
+            order=order,
+            trajectory='{label}.traj',
             logfile='{label}_sella.log',
             **sella_kwargs)
 freqs = []
@@ -135,14 +138,14 @@ try:
         else:
             converged = True
             e = mol.get_potential_energy()
-            db.write(mol, name='{label}', 
-                     data={{'energy': e, 'frequencies': freqs, 'zpe': zpe, 
+            db.write(mol, name='{label}',
+                     data={{'energy': e, 'frequencies': freqs, 'zpe': zpe,
                         'hess': hessian, 'status': 'normal'}})
     if not converged:
         raise RuntimeError
 except (RuntimeError, ValueError):
     data = {{'status': 'error'}}
-    if freqs:
+    if freqs is not None:
         data['frequencies'] = freqs
     db.write(mol, name='{label}', data=data)
 with open('{label}.log', 'a') as f:
