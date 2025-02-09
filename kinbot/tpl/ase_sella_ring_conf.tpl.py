@@ -11,6 +11,7 @@ from kinbot.ase_modules.calculators.{code} import {Code}
 from kinbot.stationary_pt import StationaryPoint
 
 
+
 db = connect('{working_dir}/kinbot.db')
 mol = Atoms(symbols={atom},
             positions={geom})
@@ -43,6 +44,9 @@ opt = Sella(mol,
             constraints=const,
             trajectory='{label}.traj',
             logfile='{label}_sella.log',
+            **sella_kwargs,
+            )
+
             **sella_kwargs,
             )
 
