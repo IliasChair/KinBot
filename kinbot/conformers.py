@@ -77,7 +77,7 @@ class Conformers:
         self.nconfs = par['random_conf']
 
         self.info = True
-        
+
         if semi_emp:
             # Maximum number of diherals for which exhaustive
             # conformation searches are done
@@ -111,7 +111,7 @@ class Conformers:
                 # divided by the number of atoms in the ring
                 cycdih = 0.
                 # list of flat sections of the ring
-                flat_ring_dih = []  
+                flat_ring_dih = []
                 for dih in dihs:
                     val = geometry.calc_dihedral(cart[dih[0]], cart[dih[1]],
                                                  cart[dih[2]], cart[dih[3]])[0]
@@ -123,7 +123,7 @@ class Conformers:
                 # only care about flatness for non-flat parts
                 n_dih_nonflat = len(cyc) - np.sum(flat_ring_dih)
                 if n_dih_nonflat > 0:
-                    cycdih /= float(n_dih_nonflat) 
+                    cycdih /= float(n_dih_nonflat)
                 else:  # for instance benzene
                     self.cyc_conf_geoms.append(copy.deepcopy(cart))
                     continue
@@ -136,7 +136,7 @@ class Conformers:
                 else:
                     nd = n_dih_nonflat - 3
                 random_dihs = list(random.sample(list(np.array(dihs)[[not f for f in flat_ring_dih]]), nd))
-                
+
                 # number of conformers (nc) per ring conformer:
                 # 4, 5, 6 member rings nc = 3 ^ nd
                 # 7+ member rings = 27
@@ -272,7 +272,7 @@ class Conformers:
             cycles = self.cyc_conf
 
         name = self.get_name()
- 
+
         # what is the value of cycles
         # what is value of all things associated w/ conf generation
         # what is length of conf_dihed?
@@ -281,7 +281,7 @@ class Conformers:
         if rotor != -999:
             if len(self.species.conf_dihed) > self.max_dihed or theoretical_confs > self.nconfs:
                 if rotor == 0:
-                    if self.info: 
+                    if self.info:
                         logger.info('\tRandom conformer search is carried out for {}.'.format(name))
                         self.info = False
 
@@ -290,7 +290,7 @@ class Conformers:
                         nrandconf = int(round(self.nconfs / self.cyc_conf) + 2)
                     else:
                         nrandconf = self.nconfs
-                    if os.path.exists('{}.log'.format(self.get_job_name(nrandconf - 1))) and os.path.exists('conf/{}_low.log'.format(name)): 
+                    if os.path.exists('{}.log'.format(self.get_job_name(nrandconf - 1))) and os.path.exists('conf/{}_low.log'.format(name)):
                         rows = self.db.select(name=self.get_job_name(nrandconf - 1))
                         for row in rows:
                             self.conf = nrandconf
@@ -309,7 +309,7 @@ class Conformers:
             return 0
 
         # skipping generation if done
-        if os.path.exists('{}.log'.format(self.get_job_name(theoretical_confs - 1))) and os.path.exists('conf/{}_low.log'.format(name)): 
+        if os.path.exists('{}.log'.format(self.get_job_name(theoretical_confs - 1))) and os.path.exists('conf/{}_low.log'.format(name)):
             rows = self.db.select(name=self.get_job_name(theoretical_confs - 1))
             for row in rows:
                 self.conf = theoretical_confs
@@ -421,8 +421,19 @@ class Conformers:
                     lowest_job = f'{name}_well'
                 else:
                     lowest_job = name
-                *_, last_row = self.db.select(name=f'{lowest_job}')
-                # The following refers to the conformer with lowest E + ZPE, 
+                try:
+                    *_, last_row = self.db.select(name=f'{lowest_job}')
+                except:
+                    print(f'{lowest_job} not found in kinbot.db')
+                    print(f"name: {name}")
+                    print(f"lowest_job: {lowest_job}")
+                    print(f"status: {status}")
+                    print(f"status[0]: {status[0]}")
+                    print(f"status[1]: {status[1]}")
+                    print(f"status[2]: {status[2]}")
+                    continue
+
+                # The following refers to the conformer with lowest E + ZPE,
                 # not the individual lowest.
                 lowest_energy = np.inf
                 lowest_zpe = np.inf
@@ -446,7 +457,7 @@ class Conformers:
                             'frequencies': last_row.data.get('frequencies'),
                             'zpe': last_row.data.get('zpe'),
                             'status': last_row.data.get('status')}
-                    self.db.write(mol, name='conf/{}_low'.format(name), 
+                    self.db.write(mol, name='conf/{}_low'.format(name),
                                   data=data)
                     #logger.warning(f'All conformer optimizations failed for {name}.')
 
@@ -494,9 +505,9 @@ class Conformers:
                             if len(freq) > 0:
                                 if self.species.wellorts:
                                     if freq[0] / self.species.freq[0] < ratio:
-                                        err = -1 
+                                        err = -1
                                     if freq[0] / self.species.freq[0] > 1. / ratio:
-                                        err = -1 
+                                        err = -1
                                     if self.species.natom > 2 and freq[1] <= 0.:
                                         err = -1
                                 else:
@@ -519,7 +530,7 @@ class Conformers:
                         if self.species.natom == 1:
                             frequencies.append(None)
                         elif self.species.natom == 2:
-                            frequencies.append(np.zeros(self.species.natom * 3 - 5)) 
+                            frequencies.append(np.zeros(self.species.natom * 3 - 5))
                         else:
                             frequencies.append(np.zeros(self.species.natom * 3 - 6))
 
@@ -542,7 +553,7 @@ class Conformers:
                     lowest_conf = 'low'
                     lowest_e_geom = l1_last_row.positions
                     lowest_energy = l1energy
-                
+
                 low_row = None
                 low_rows = self.db.select(name='conf/{}_low'.format(name))
                 for lrow in low_rows:
@@ -565,11 +576,11 @@ class Conformers:
                             'zpe': row_last.data.get('zpe'),
                             'status': row_last.data.get('status')}
                     if low_row and hasattr(low_row, 'data') \
-                            and all((np.all(data.get(k) == v) 
+                            and all((np.all(data.get(k) == v)
                                      for k, v in low_row.data.items())):
                         pass
                     else:
-                        self.db.write(mol, name='conf/{}_low'.format(name), 
+                        self.db.write(mol, name='conf/{}_low'.format(name),
                                       data=data)
                 except UnboundLocalError:
                     pass
@@ -601,7 +612,7 @@ class Conformers:
 
     def lowest_conf_info(self):
         """
-        in case conformer search was successfully skipped on restart, 
+        in case conformer search was successfully skipped on restart,
         this reads the energy and geometry of the lowest energy conf directly
         """
         name = self.get_name()
@@ -616,8 +627,8 @@ class Conformers:
             err, energy = self.qc.get_qc_energy(job)
             err, zpe = self.qc.get_qc_zpe(job)
             err, geom = self.qc.get_qc_geom(job, self.species.natom)
-                
-        return geom, energy, zpe 
+
+        return geom, energy, zpe
 
     def find_unique(self, conformers, energies, frequencies, valid, temp=None, boltz=None):
         """
