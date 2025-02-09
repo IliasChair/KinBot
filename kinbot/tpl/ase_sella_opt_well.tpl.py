@@ -19,12 +19,13 @@ def calc_vibrations(mol):
     mol = mol.copy()
     mol.calc = Gaussian(
         mem='8GB',
-        nprocshared=1,
+        nprocshared=4,
         method='wb97xd',
-        basis='tzvp',
+        basis='6-31G(d)',
         chk="{label}.chk",
         freq='',
-        mult=2
+        mult=1,
+        extra='SCF=(XQC, MaxCycle=200)'
     )
     mol.calc.label = '{label}_vib'
     if 'chk' in mol.calc.parameters:
@@ -46,7 +47,7 @@ def calc_vibrations(mol):
     hessian = parsed_data.vibdisps
 
     os.chdir(init_dir)
-    shutil.rmtree('{label}_vib')
+    #shutil.rmtree('{label}_vib')
     return freqs, zpe, hessian
 
 db = connect('{working_dir}/kinbot.db')
@@ -92,7 +93,10 @@ try:
         freqs, zpe, hessian = calc_vibrations(mol)
         if order == 0 and (np.count_nonzero(np.array(freqs) < 0) > 1
                            or np.count_nonzero(np.array(freqs) < -50) >= 1):
-            print(f'Found one or more imaginary frequencies. {{freqs[1:6]}}')
+            print(f'Invalid frequencies for minimum (order={order}). '
+                  f'Expected no imaginary frequencies, but found '
+                  f'{{np.count_nonzero(np.array(freqs) < 0)}}. '
+                  f'frequencies: {{freqs}}')
             converged = False
             mol.calc.label = '{label}'
             attempts += 1
@@ -102,7 +106,9 @@ try:
         elif order == 1 and (np.count_nonzero(np.array(freqs) < 0) > 2  # More than two imag frequencies
                              or np.count_nonzero(np.array(freqs) < -50) >= 2  # More than one imag frequency larger than 50i
                              or np.count_nonzero(np.array(freqs) < 0) == 0):  # No imaginary frequencies
-            print(f'Wrong number of imaginary frequencies: {{freqs[6:]}}')
+            print(f'Incorrect number of imaginary frequencies for order={order}. '
+                  f'Expected exactly 1 imaginary frequency, but found '
+                  f'{{np.count_nonzero(np.array(freqs) < 0)}}. Frequencies: {{freqs}}')
             converged = False
             mol.calc.label = '{label}'
             attempts += 1
@@ -111,6 +117,7 @@ try:
                 print(f'Retrying with a tighter criterion: fmax={{fmax}}.')
         else:
             converged = True
+            print(f"Converged, with frequencies: {{freqs}}")
             e = mol.get_potential_energy()
             db.write(mol, name='{label}',
                      data={{'energy': e, 'frequencies': freqs, 'zpe': zpe,
