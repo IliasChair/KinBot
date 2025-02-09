@@ -91,9 +91,11 @@ class Nn_surr(Calculator):
             "best_no_dens": ROOT_PATH / "rundir_smaller/out/checkpoints/2024-12-26-10-42-24/best_freq_rmse_checkpoint.pt",
             "n3_best_chkpt": ROOT_PATH / "rundir_small/out/checkpoints/2025-01-27-13-33-04/best_checkpoint.pt",
             "n8_chkpt": ROOT_PATH / "rundir_small/out/checkpoints/2025-01-28-12-35-28/checkpoint.pt",
+            "latest": ROOT_PATH / "rundir_small/out/checkpoints/2025-01-31-23-34-40/checkpoint.pt",
+            "8_2": ROOT_PATH / "rundir_small/out/checkpoints/2025-01-22-20-41-52/checkpoint.pt",
         }
 
-        checkpoint_path = calculators["n3_best_chkpt"]
+        checkpoint_path = calculators["8_2"]
         with open(os.devnull, 'w') as devnull:
             with redirect_stdout(devnull), redirect_stderr(devnull):
                 calc = OCPCalculator(
