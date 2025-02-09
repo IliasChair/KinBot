@@ -47,9 +47,6 @@ opt = Sella(mol,
             **sella_kwargs,
             )
 
-            **sella_kwargs,
-            )
-
 try:
     mol.calc.label = '{label}'
     opt.run(fmax=1e-4, steps=500)
