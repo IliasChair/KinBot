@@ -4,17 +4,45 @@ import shutil
 
 import numpy as np
 from ase import Atoms
+from ase.data import atomic_numbers
 from ase.db import connect
 #from ase.vibrations import Vibrations
 from ase.calculators.gaussian import Gaussian
 from sella import Sella
 
-#from kinbot.constants import EVtoHARTREE
+from kinbot.constants import EVtoHARTREE
 from kinbot.ase_modules.calculators.{code} import {Code}
 #from kinbot.stationary_pt import StationaryPoint
 #from kinbot.frequencies import get_frequencies
 import cclib
 import subprocess
+
+def get_valid_multiplicity(atoms: Atoms, default_multiplicity: int = 1):
+    """
+    Ensures a valid spin multiplicity for an ASE Atoms object to prevent errors in Gaussian.
+
+    Parameters:
+    atoms (Atoms): ASE Atoms object
+    default_multiplicity (int): Initial guess for multiplicity
+
+    Returns:
+    int: Corrected multiplicity
+    """
+    # Compute the total number of electrons
+    total_electrons = sum(atomic_numbers[atom.symbol] for atom in atoms)
+
+    # Ensure multiplicity is valid
+    if total_electrons % 2 == 0:
+        # Even electron count -> Multiplicity must be odd (1, 3, 5, ...)
+        if default_multiplicity % 2 == 0:
+            default_multiplicity += 1
+    else:
+        # Odd electron count -> Multiplicity must be even (2, 4, 6, ...)
+        if default_multiplicity % 2 == 1:
+            default_multiplicity += 1
+
+    return default_multiplicity
+
 
 def create_fchk():
     """
@@ -29,39 +57,63 @@ def create_fchk():
 
 def calc_vibrations(mol):
     mol = mol.copy()
-    mol.calc = Gaussian(
-        mem='8GB',
-        nprocshared=4,
-        method='HF',
-        basis='STO-3G',
-        # method='wb97xd',
-        # basis='6-31G(d)',
-        chk="{label}_vib.chk",
-        freq='',
-        mult=1,
-        extra='SCF=(XQC, MaxCycle=200)'
-    )
-    mol.calc.label = '{label}_vib'
-    # Compute frequencies in a separate temporary directory to avoid
-    # conflicts accessing the cache in parallel calculations.
-    if not os.path.isdir('{label}_vib'):
-        os.mkdir('{label}_vib')
     init_dir = os.getcwd()
-    os.chdir('{label}_vib')
 
-    mol.get_potential_energy()
+    # First attempt
+    try:
+        mol.calc = Gaussian(
+            mem='8GB',
+            nprocshared=4,
+            method='wb97xd',
+            basis='6-31G(d)',
+            chk="{label}_vib.chk",
+            freq='',
+            extra='SCF=(XQC, MaxCycle=200)'
+        )
+        mol.calc.label = '{label}_vib'
 
+        # Create/change to temporary directory
+        if not os.path.isdir('{label}_vib'):
+            os.mkdir('{label}_vib')
+        os.chdir('{label}_vib')
+
+        e = mol.get_potential_energy()
+
+    except RuntimeError as err:
+        print("initial gaussian calculation failed in {label}")
+        # Return to initial directory before second attempt
+        os.chdir(init_dir)
+
+        # Second attempt with corrected multiplicity
+        mult = get_valid_multiplicity(mol)
+        print(f"trying again witl multiplicity {{mult}}")
+        mol.calc = Gaussian(
+            mem='8GB',
+            nprocshared=4,
+            method='wb97xd',
+            basis='6-31G(d)',
+            chk="{label}_vib.chk",
+            freq='',
+            mult=mult,  # Use corrected multiplicity
+            extra='SCF=(XQC, MaxCycle=200)'
+        )
+        mol.calc.label = '{label}_vib'
+
+        # Change back to temporary directory
+        os.chdir('{label}_vib')
+        e = mol.get_potential_energy()
+
+    # Rest of the function remains the same
     create_fchk()
-
     parsed_data = cclib.io.ccopen("{label}_vib.fchk").parse()
-
     freqs = parsed_data.vibfreqs
     hessian = parsed_data.hessian
 
     parsed_data = cclib.io.ccopen('{label}_vib.log').parse()
     zpe = parsed_data.zpve
+
+    # Return to initial directory
     os.chdir(init_dir)
-    #shutil.rmtree('{label}_vib')
     return freqs, zpe, hessian
 
 db = connect('{working_dir}/kinbot.db')
@@ -79,7 +131,8 @@ if os.path.isfile('{label}_sella.log'):
     os.remove('{label}_sella.log')
 
 sella_kwargs = {sella_kwargs}
-opt = Sella(mol, order=1,
+opt = Sella(mol,
+            order=1,
             trajectory='{label}.traj',
             logfile='{label}_sella.log',
             **sella_kwargs)
@@ -108,7 +161,7 @@ try:
         else:
             converged = True
             print(f"Converged, with frequencies: {{freqs}}")
-            e = mol.get_potential_energy()
+            e = mol.get_potential_energy() * EVtoHARTREE
             db.write(mol, name='{label}',
                      data={{'energy': e, 'frequencies': freqs, 'zpe': zpe,
                             'hess': hessian, 'status': 'normal'}})
@@ -123,8 +176,9 @@ except (RuntimeError, ValueError):
 
 with open('{label}.log', 'a') as f:
     f.write('done\n')
-    f.write(f"{{converged}}\n")
-    f.write(f"energy: {{e}}\n")
+    f.write("########################################\n")
+    f.write(f"converged: {{converged}}\n")
+    f.write(f"energy: {{e}}, zpe: {{zpe}}, hessian: {{hessian is not None}}\n")
     f.write(f"freqs: {{freqs}}\n")
-    f.write(f"zpe: {{zpe}}\n")
-    f.write(f"hessian: {{hessian is not None}}\n")
+    f.write("########################################\n")
+    f.write('done\n')
