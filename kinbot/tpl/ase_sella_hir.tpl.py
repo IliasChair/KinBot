@@ -35,7 +35,7 @@ logger = logging.getLogger(__name__)
 try:
     # Log initial configuration
     logger.info(f"Starting optimization for {label}")
-    logger.info(f"Configuration: order={order}, constraints={const}")
+    logger.info(f"Configuration: order={order}, constraints={{const}}")
 
     if os.path.isfile('{label}_sella.log'):
         os.remove('{label}_sella.log')
