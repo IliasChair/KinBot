@@ -95,8 +95,9 @@ class GaussianIRC(GaussianDynamics):
 
 
 class Gaussian(FileIOCalculator):
-    implemented_properties = ['energy', 'forces', 'dipole']
     command = 'GAUSSIAN < PREFIX.com > PREFIX.log'
+    _legacy_default_command = 'g16 < PREFIX.com > PREFIX.log'
+    implemented_properties = ['energy', 'forces', 'dipole']
     discard_results_on_any_change = True
 
     def __init__(self, *args, label='Gaussian', **kwargs):
