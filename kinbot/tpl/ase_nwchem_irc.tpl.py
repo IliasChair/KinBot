@@ -1,6 +1,6 @@
 """
 Template to run ircs with ase using NWChem
-KinBot needs to pass to the template: 
+KinBot needs to pass to the template:
 1. A label for the calculation
 2. The number of cores
 3. The kwargs for NWChem
@@ -25,7 +25,7 @@ atom = {atom}
 geom = {geom}
 
 mol = Atoms(symbols=atom, positions=geom)
-mol.set_calculator(calc)
+mol.calc = calc
 
 try:
     e = mol.get_potential_energy()  # use the NWChem optimizer (task optimize)

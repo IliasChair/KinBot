@@ -1,6 +1,6 @@
 """
 Template to run ase to optimize a well using NWChem
-KinBot needs to pass to the template: 
+KinBot needs to pass to the template:
 1. A label for the calculation
 2. The number of cores
 3. The kwargs for NWChem
@@ -30,7 +30,7 @@ atom = {atom}
 geom = {geom}
 
 mol = Atoms(symbols=atom, positions=geom)
-mol.set_calculator(calc)
+mol.calc = calc
 
 # apply the constraints:
 fix = {fix}
@@ -93,7 +93,7 @@ try:
     mol.positions = geom
     db = connect('kinbot.db')
     db.write(mol, name = label, data = {{'status' : 'normal'}})
-except RuntimeError, e: 
+except RuntimeError, e:
     db = connect('kinbot.db')
     db.write(mol, name = label, data = {{'status' : 'error'}})
 

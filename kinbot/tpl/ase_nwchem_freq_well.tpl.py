@@ -1,6 +1,6 @@
 """
 Template to run ase to calculate the frequencies of a well using NWChem
-KinBot needs to pass to the template: 
+KinBot needs to pass to the template:
 1. A label for the calculation
 2. The number of cores
 3. The kwargs for NWChem
@@ -32,10 +32,10 @@ geom = {geom}
 
 
 mol = Atoms(symbols = atom, positions = geom)
-mol.set_calculator(calc)
+mol.calc = calc
 try:
     e = mol.get_potential_energy() # use the NWChem optimizer (task optimize)
-    
+
     #read the frequencies
     natom = len(mol)
     if natom == 1:
@@ -43,8 +43,8 @@ try:
     elif natom == 2:
         freq = np.array([0.])
     else:
-        freq = np.zeros(3 * natom - 6) 
-    freq_all = np.zeros(3 * natom) 
+        freq = np.zeros(3 * natom - 6)
+    freq_all = np.zeros(3 * natom)
     with open('{label}.out') as f:
         lines = f.readlines()
     nfreq = 0
@@ -57,17 +57,17 @@ try:
     for fr in range(nfreq):
         if abs(freq_all[fr]) > 5:
             freq[i] = freq_all[fr]
-            i += 1 
+            i += 1
 
     #read the zpe
-    for line in reversed(lines):  
+    for line in reversed(lines):
         if re.search('Zero-Point correction to Energy', line) != None:
             zpe = float(line.split()[8])
-            break  
+            break
 
     db = connect('kinbot.db')
     db.write(mol,name = label,data={{'energy': e, 'frequencies': np.asarray(freq), 'zpe':zpe, 'status' : 'normal'}})
-except RuntimeError, e: 
+except RuntimeError, e:
     db = connect('kinbot.db')
     db.write(mol, name = label, data = {{'status' : 'error'}})
 

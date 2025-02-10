@@ -22,7 +22,7 @@ e = mol.get_potential_energy()  # Compute Freq
 kwargs['jobtype'] = 'rpath'
 calc = QChem(**kwargs)
 calc.command = '{qc_command} -nt {ppn} PREFIX.inp PREFIX.out PREFIX.sv'
-mol.set_calculator(calc)
+mol.calc = calc
 success = True
 try:
     e = mol.get_potential_energy()  # Perform IRC
@@ -54,7 +54,7 @@ if success:
         iowait(logfile, 'qchem')
         mol_prod.positions = reader_qchem.read_geom(logfile, mol_prod)
         db.write(mol_prod, name=label, data={{'energy': e, 'status': 'normal'}})  # TODO mol_prod?
-    except RuntimeError: 
+    except RuntimeError:
         mol_prod.positions = reader_qchem.read_geom(logfile, mol_prod)
         if mol_prod.positions is not None:
             db.write(mol_prod, name=label, data={{'status': 'normal'}})
