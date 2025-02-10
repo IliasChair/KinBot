@@ -32,7 +32,7 @@ HARTREE_TO_EV = 27.211386245988
 class Nn_surr(Calculator):
     """Neural Network calculator implementing both cheap energy and expensive force calculations."""
     implemented_properties: ClassVar[list[str]] = ["energy", "forces"]
-    def __init__(self, model_name: str = "best_no_dens", unit: Literal["hartree", "ev"] = "ev") -> None:
+    def __init__(self, model_name: str = "best_no_dens", unit: Literal["hartree", "ev"] = "hartree") -> None:
         Calculator.__init__(self)
 
         warnings.filterwarnings('ignore', category=FutureWarning,
