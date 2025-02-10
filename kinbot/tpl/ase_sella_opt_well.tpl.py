@@ -9,7 +9,7 @@ from ase.db import connect
 from ase.calculators.gaussian import Gaussian
 from sella import Sella
 
-#from kinbot.constants import EVtoHARTREE
+from kinbot.constants import EVtoHARTREE
 from kinbot.ase_modules.calculators.{code} import {Code}
 #from kinbot.stationary_pt import StationaryPoint
 #from kinbot.frequencies import get_frequencies
@@ -32,13 +32,13 @@ def calc_vibrations(mol):
     mol.calc = Gaussian(
         mem='8GB',
         nprocshared=4,
-        method='HF',
-        basis='STO-3G',
-        # method='wb97xd',
-        # basis='6-31G(d)',
+        # method='HF',
+        # basis='STO-3G',
+        method='wb97xd',
+        basis='6-31G(d)',
         chk="{label}_vib.chk",
         freq='',
-        mult=1,
+        #mult=1,
         extra='SCF=(XQC, MaxCycle=200)'
     )
     mol.calc.label = '{label}_vib'
@@ -80,7 +80,7 @@ if os.path.isfile('{label}_sella.log'):
 
 # For monoatomic wells, just calculate the energy and exit.
 if len(mol) == 1:
-    e = mol.get_potential_energy()
+    e = mol.get_potential_energy() * EVtoHARTREE
     db.write(mol, name='{label}',
              data={{'energy': e, 'frequencies': np.array([]), 'zpe': 0.0,
                     'hess': np.zeros([3, 3]), 'status': 'normal'}})
@@ -132,7 +132,7 @@ try:
         else:
             converged = True
             print(f"Converged, with frequencies: {{freqs}}")
-            e = mol.get_potential_energy()
+            e = mol.get_potential_energy() * EVtoHARTREE
             db.write(mol, name='{label}',
                      data={{'energy': e, 'frequencies': freqs, 'zpe': zpe,
                             'hess': hessian, 'status': 'normal'}})
