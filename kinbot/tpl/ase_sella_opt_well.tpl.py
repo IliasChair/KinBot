@@ -79,8 +79,8 @@ def calc_vibrations(mol):
 
         e = mol.get_potential_energy()
 
-    except RuntimeError as e:
-        print(f"initial gaussian calculation failed in {label}")
+    except RuntimeError as err:
+        print("initial gaussian calculation failed in {label}")
         # Return to initial directory before second attempt
         os.chdir(init_dir)
 
@@ -199,9 +199,9 @@ except (RuntimeError, ValueError):
 
 with open('{label}.log', 'a') as f:
     f.write('done\n')
-    f.write("########################################")
+    f.write("########################################\n")
     f.write(f"converged: {{converged}}\n")
     f.write(f"energy: {{e}}, zpe: {{zpe}}, hessian: {{hessian is not None}}\n")
     f.write(f"freqs: {{freqs}}\n")
-    f.write("########################################")
+    f.write("########################################\n")
     f.write('done\n')
