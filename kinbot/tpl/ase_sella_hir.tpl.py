@@ -56,7 +56,7 @@ try:
         db.write(mol, name='{label}', data={{'energy': e, 'status': 'normal'}})
         logger.info(f"Successfully converged. Final energy: {{e}}")
     else:  # TODO Eventually we might want to correct something in case it fails.
-        error_msg = "Hindered Rotor Optimization failed to converge within 300 steps"
+        error_msg = "Hindered Rotor Optimization failed to converge within 500 steps"
         logger.error(error_msg)
         db.write(mol, name='{label}',
                 data={{'status': 'error', 'error_type': 'convergence_failure'}})
