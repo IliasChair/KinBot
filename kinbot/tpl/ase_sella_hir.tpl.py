@@ -49,7 +49,7 @@ try:
                 logfile='{label}_sella.log',
                 **sella_kwargs)
 
-    converged = opt.run(fmax=0.001, steps=300)
+    converged = opt.run(fmax=0.001, steps=500)
 
     if converged:
         e = mol.get_potential_energy()

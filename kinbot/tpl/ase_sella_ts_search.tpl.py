@@ -7,7 +7,7 @@ from sella import Sella, Constraints
 from kinbot.ase_modules.calculators.{code} import {Code}
 
 db = connect('{working_dir}/kinbot.db')
-mol = Atoms(symbols={atom}, 
+mol = Atoms(symbols={atom},
             positions={geom})
 
 const = Constraints(mol)
@@ -33,14 +33,14 @@ if os.path.isfile('{label}_sella.log'):
     os.remove('{label}_sella.log')
 
 sella_kwargs = {sella_kwargs}
-opt = Sella(mol, 
+opt = Sella(mol,
             order=0,
             constraints=const,
-            trajectory='{label}.traj', 
+            trajectory='{label}.traj',
             logfile='{label}_sella.log',
             **sella_kwargs)
 try:
-    cvgd = opt.run(fmax=0.1, steps=300)
+    cvgd = opt.run(fmax=0.1, steps=500)
     if cvgd:
         e = mol.get_potential_energy()
     else:  # TODO Eventually we might want to correct something in case it fails.
