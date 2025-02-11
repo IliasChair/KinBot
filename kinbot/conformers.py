@@ -166,7 +166,7 @@ class Conformers:
     def start_ring_conformer_search(self, index, cart):
         """
         index: number of the conformer
-        In each iteration a given dihedral is changed, and then in the 
+        In each iteration a given dihedral is changed, and then in the
         next one it's fixed and another one is changed, and then two are
         fixed and the next one is changed, until all are at their desired values
         """
@@ -454,7 +454,11 @@ class Conformers:
                         ext = 'log'
                     else:
                         raise NotImplementedError(f'Code {self.qc.qc} not available.')
-                    copyfile(f'{lowest_job}.{ext}', f'conf/{name}_low.{ext}')
+                    try:
+                        copyfile(f'{lowest_job}.{ext}', f'conf/{name}_low.{ext}')
+                    except:
+                        print((f"could not move: {lowest_job}.{ext}', f'conf/{name}_low.{ext} "
+                               "continuig anyway..."))
                     mol = Atoms(symbols=last_row.symbols, positions=last_row.positions)
                     data = {'energy': last_row.data.get('energy'),
                             'frequencies': last_row.data.get('frequencies'),
