@@ -7,12 +7,12 @@ from typing import ClassVar, Literal
 from contextlib import redirect_stdout, redirect_stderr
 from pathlib import Path
 from functools import partial
-from typing import List, Optional, Dict
 
 from aimnet import load_AIMNetMT_ens, load_AIMNetSMD_ens, AIMNetCalculator
 from ase.atoms import Atoms
 from fairchem.core.models.model_registry import model_name_to_local_file
 import warnings
+import logging
 
 ELEMENT_ENERGIES = {
     # energies in Hartree at coupled cluster cc-pCVTZ level
@@ -32,12 +32,11 @@ HARTREE_TO_EV = 27.211386245988
 class Nn_surr(Calculator):
     """Neural Network calculator implementing both cheap energy and expensive force calculations."""
     implemented_properties: ClassVar[list[str]] = ["energy", "forces"]
-    def __init__(self, model_name: str = "best_no_dens", unit: Literal["hartree", "ev"] = "hartree") -> None:
+    def __init__(self, model_name: str = "best_no_dens", unit: Literal["hartree", "ev"] = "ev") -> None:
         Calculator.__init__(self)
 
         warnings.filterwarnings('ignore', category=FutureWarning,
             message='You are using `torch.load` with `weights_only=False`')
-
 
         self.model_name = model_name
         self._energy_calculator = None
@@ -63,18 +62,43 @@ class Nn_surr(Calculator):
             self._force_calculator = self.get_force_calculator()
         return self._force_calculator
 
-    def get_cheap_energy_calculator(self) -> 'Calculator':
-        """Returns a calculator optimized for quick energy calculations."""
-        with warnings.catch_warnings():
-            warnings.filterwarnings('ignore', category=FutureWarning,
-                          message='You are using `torch.load` with `weights_only=False`')
-            energy_calcs = {"AIMNetGas": load_AIMNetMT_ens(),
-                            "AIMNetSMD": load_AIMNetSMD_ens()}
+    def get_cheap_energy_calculator(self) -> "Calculator":
+        """
+        Returns a calculator optimized for quick energy calculations.
 
-        return AIMNetCalculator(energy_calcs["AIMNetGas"])
+        Temporarily disables logging to suppress log outputs from
+        the AIMNetCalculator initialization.
+
+        :return: An instance of AIMNetCalculator
+        """
+        with warnings.catch_warnings():
+            warnings.filterwarnings(
+                "ignore",
+                category=FutureWarning,
+                message="You are using `torch.load` with `weights_only=False`"
+            )
+            energy_calcs = {
+                "AIMNetGas": load_AIMNetMT_ens(),
+                "AIMNetSMD": load_AIMNetSMD_ens()
+            }
+        # Temporarily disable logging to prevent log outputs from AIMNetCalculator
+        logging.disable(logging.CRITICAL)
+        try:
+            calc = AIMNetCalculator(energy_calcs["AIMNetGas"])
+        finally:
+            # Re-enable logging after calculator creation
+            logging.disable(logging.NOTSET)
+        return calc
 
     def get_force_calculator(self) -> 'Calculator':
-        """Returns a calculator optimized for force calculations."""
+        """
+        Returns a calculator optimized for force calculations without extraneous
+        log outputs.
+
+        Temporarily disables logging to suppress the OCPCalculator messages.
+
+        :return: Instance of the force calculator created via OCPCalculator.
+        """
         get_model = partial(
             model_name_to_local_file, local_cache="/hpcwork/zo122003/BA/models"
         )
@@ -96,15 +120,20 @@ class Nn_surr(Calculator):
         }
 
         checkpoint_path = calculators["8_2"]
-        with open(os.devnull, 'w') as devnull:
-            with redirect_stdout(devnull), redirect_stderr(devnull):
-                calc = OCPCalculator(
-                    checkpoint_path=checkpoint_path,
-                    cutoff=CUTOFF,
-                    max_neighbors=MAX_NEIGHBORS,
-                    cpu=True,
-                    seed=42
-                )
+
+        # Temporarily disable logging to suppress any log messages
+        logging.disable(logging.CRITICAL)
+        try:
+            calc = OCPCalculator(
+                checkpoint_path=checkpoint_path,
+                cutoff=CUTOFF,
+                max_neighbors=MAX_NEIGHBORS,
+                cpu=True,
+                seed=42
+            )
+        finally:
+            # Re-enable logging after creating the calculator
+            logging.disable(logging.NOTSET)
         return calc
 
     def calculate(
