@@ -154,13 +154,14 @@ class HIR:
                     continue
                 energies = self.hir_energies[rotor]
                 if abs(energies[0] - self.species.energy) * constants.AUtoKCAL > 300:
-                    logger.warning(f'0 angle rotor for rotor {rotor} has a different energy than '
-                                   'the optimized structure for '
-                                   f'{self.species.name} ({energies[0]} vs {self.species.energy}).')
-                    logger.warning('This might be '
-                                   'caused by an SCF convergence issue. '
-                                   'Hindered rotors are disabled for this '
-                                   'stationary point.')
+                    if not energies[0] == -1: # e.g. skip if convergence failure
+                        logger.warning(f'0 angle rotor for rotor {rotor} has a different energy than '
+                                    'the optimized structure for '
+                                    f'{self.species.name} ({energies[0]} vs {self.species.energy}).')
+                        logger.warning('This might be '
+                                    'caused by an SCF convergence issue. '
+                                    'Hindered rotors are disabled for this '
+                                    'stationary point.')
                     self.hir_status = [[1 for ai in ri] for ri in self.hir_status]
                     return 0
                 # energies taken if status = 0, successful geom check or normal gauss termination
