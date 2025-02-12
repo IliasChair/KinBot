@@ -188,8 +188,13 @@ def main():
             fmax_loc *= 0.3
             logger.info(f"Retrying with fmax={{fmax_loc}}")
         else:
-            raise RuntimeError(("Failed to converge after 3 attempts for "
-                                f"{label}. within {{STEPS}} steps"))
+            logger.error(("Failed to converge after 3 attempts for "
+                         f"{label}. within {{STEPS}} steps"))
+            data = {{"status": "error"}}
+            if freqs is not None:
+                data["frequencies"] = freqs
+            db.write(mol, name="{label}", data=data)
+            error_free_exec = True  # E.g. non-convergence is not an error
 
     except Exception as err:
         logger.error(f"Optimization failed: {{err}}")
@@ -212,7 +217,8 @@ def main():
         BOX_WIDTH = 79
 
         # Determine final status; non-convergence is considered failure.
-        final_status = "SUCCESS ✔" if error_free_exec else "FAILURE ✘"
+        final_status = "SUCCESS ✔" if (error_free_exec and
+                                       converged_freqs) else "FAILURE ✘"
 
         # Build the report lines using formatted strings.
         report_lines = [
@@ -223,8 +229,7 @@ def main():
             f"Error-free:     {{error_free_exec}}",
             f"order:          {order}"
         ]
-        if error_free_exec and ("e" in locals() and "zpe" in locals() and
-                                "freqs" in locals()):
+        if ("e" in locals() and "zpe" in locals() and "freqs" in locals()):
             report_lines.extend([
                 f"Energy:         {{e}}",
                 f"ZPE:            {{zpe}}",
