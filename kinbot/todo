@@ -1,0 +1,93 @@
+Below is an explanation of the issue and some theoretical recommendations on how to address it:
+
+---
+
+### The Issue
+
+In KinBot, convergence of a full (unconstrained) optimization is judged using both force
+criteria (e.g., maximum force below a threshold \( f_{\text{max}} \)) and vibrational
+frequency analysis (ensuring there are no (or only allowed) imaginary modes).
+
+- **For Full Optimizations:**
+  After reaching the desired force threshold, a frequency calculation is run.
+  If the frequencies are all valid (no significant imaginary frequencies), the structure
+  is accepted as converged.
+
+- **For HIR Scans:**
+  The scan is performed with constrained dihedral angles. Here the optimization is
+  restricted to only the free degrees of freedom. Because the dihedral is fixed, the force
+  on that coordinate (or some combination of components) may remain nonzero. As a result,
+  even if the structure is physically acceptable (and would yield good frequencies if run),
+  it may not strictly meet the full unconstrained \( f_{\text{max}} \) convergence target.
+
+Thus, structures accepted from the full optimization (by checking frequencies) might then
+fail the HIR convergence criteria if those criteria are based solely on the force threshold.
+
+---
+
+### Theoretical Considerations & Recommendations
+
+From a **physical perspective**, the goal is to ensure that each accepted structure
+represents a true (or acceptable) stationary point in the context of the allowed motion.
+For HIR scans this means:
+
+1. **Recognize the Role of Constraints:**
+   - **Physical Impact:** Constrained optimizations naturally leave residual forces
+     on the frozen degrees of freedom. It is expected that the force on a dihedral
+     (or the corresponding generalized force) remains nonzero despite the rest of the
+     system having relaxed.
+   - **Recommendation:** Rather than applying the same \( f_{\text{max}} \) criterion
+     as for fully unconstrained optimizations, either remove the contribution of the
+     constrained mode from the force metric or adopt a relaxed threshold that reflects
+     the limited degrees of freedom.
+
+2. **Supplement or Replace Force Criteria with Frequency Analysis:**
+   - **Physical Impact:** Vibrational frequencies provide insight into the local curvature
+     of the potential energy surface. Even for constrained optimizations, one can perform a
+     (partial) vibrational analysis in the unconstrained subspace.
+   - **Recommendation:** If possible, run a frequency (or a simplified vibrational) check on
+     the optimized HIR structures. Validate that aside from the expected behavior of the
+     constrained mode, all remaining vibrational modes are reasonable (i.e., positive for
+     a minimum). This would be a more physically meaningful test of convergence than a pure
+     force threshold in the presence of constraints.
+
+3. **Evaluate the Energy Profile:**
+   - **Physical Impact:** The purpose of a HIR scan is to map out the energy variation
+     along the torsional coordinate. Ultimately, the quality and smoothness of the energy
+     profile (e.g., a sensible Fourier fit and reasonable barrier heights) are the key
+     indicators of the scan’s success.
+   - **Recommendation:** In addition to (or instead of) force criteria, ensure that the
+     energy profile is smooth and physically sensible. Small deviations in the force criteria
+     may be acceptable if the relative energies across scan points behave in a consistent
+     manner.
+
+---
+
+### Summary Recommendation
+
+From a theoretical and practical standpoint, to handle the issue:
+
+- **Relax the Force Convergence Criterion for HIR Scans:**
+  Modify the convergence check to either subtract out the contributions of the constrained
+  degree(s) of freedom or simply use a looser force threshold. This acknowledges that constraints
+  inherently cause higher residual forces.
+
+- **Add a Convergence Check Using Vibrational Analysis:**
+  Consider performing a vibrational (or partial frequency) analysis post HIR optimization
+  to confirm that the structure is dynamically stable in the unconstrained subspace. Accept a
+  structure if it shows proper behavior in the remaining modes, even if the raw forces exceed
+  the threshold.
+
+- **Monitor the Energy Profile:**
+  Use the smoothness and consistency of the energy variation along the rotor scan as an
+  additional metric. If the energy barrier and Fourier fit are physically reasonable, minor
+  force deviations may be tolerable.
+
+Implementing one or a combination of these strategies will better align the convergence
+assessment of HIR scans with the underlying physics of constrained optimization.
+
+---
+
+By adopting these modifications, KinBot would more fairly assess convergence for HIR scans,
+ensuring that a structure already validated via full frequency analysis isn’t rejected solely
+because the constrained optimization inherently yields different force metrics.
