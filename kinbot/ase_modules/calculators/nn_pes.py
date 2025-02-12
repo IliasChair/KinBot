@@ -10,9 +10,12 @@ from functools import partial
 
 from aimnet import load_AIMNetMT_ens, load_AIMNetSMD_ens, AIMNetCalculator
 from ase.atoms import Atoms
+from ase.vibrations import Vibrations
 from fairchem.core.models.model_registry import model_name_to_local_file
 import warnings
 import logging
+import tempfile
+import shutil
 
 ELEMENT_ENERGIES = {
     # energies in Hartree at coupled cluster cc-pCVTZ level
@@ -193,6 +196,7 @@ class Nn_surr(Calculator):
         else:
             return forces * HARTREE_TO_EV  # Convert to eV/Å
 
+
 def get_calculator():
     """
     Get a Neural Network Surrogate calculator instance.
@@ -207,3 +211,77 @@ def get_calculator():
     """
 
     return Nn_surr()
+
+def calculate_vibrational_properties(calculator, work_dir, atoms):
+    """
+    Calculate vibrational frequencies, zero-point energy, and Hessian, then
+    clean up the temporary working directory files.
+
+    If the work_dir parameter is the string "random", a random temporary
+    directory is created (ensuring it does not already exist) and deleted
+    after the analysis.
+
+    This function performs vibrational analysis on the given atoms using the
+    provided ASE calculator. Temporary files are written to the specified
+    working directory during the analysis and are removed afterwards using the
+    Vibrations.clean() method (and the directory is deleted if created randomly).
+
+    :param calculator: ASE calculator for force and energy evaluations.
+    :type calculator: ase.calculators.calculator.Calculator
+    :param work_dir: Directory path where vibrational analysis files are stored,
+                     or the string "random" to use a temporary directory.
+    :type work_dir: str or pathlib.Path
+    :param atoms: ASE Atoms object representing the system.
+    :type atoms: ase.atoms.Atoms
+    :raises Exception: Propagates any error encountered during analysis.
+    :return: Tuple of vibrational frequencies (numpy.ndarray), zero-point energy
+             (float), and Hessian matrix (numpy.ndarray) or None if not available.
+    :rtype: tuple
+    """
+
+    temporary_dir_created = False
+    # Check if a random directory should be used
+    if isinstance(work_dir, str) and work_dir.lower() == "random":
+        # Create a random temporary directory (it is guaranteed not to exist)
+        work_dir = Path(tempfile.mkdtemp(prefix="ase_vib_"))
+        temporary_dir_created = True
+    else:
+        work_dir = Path(work_dir)
+        work_dir.mkdir(parents=True, exist_ok=True)
+
+    try:
+        # Attach the provided calculator to the atoms object.
+        atoms.set_calculator(calculator)
+
+        # Create a prefix for the vibration output files inside work_dir.
+        vib_prefix = str(work_dir / "vibration")
+
+        # Initialize the Vibrations object.
+        vib = Vibrations(atoms, name=vib_prefix)
+
+        # Run the vibrational analysis.
+        vib.run()
+
+        # Retrieve vibrational frequencies and zero-point energy.
+        frequencies = vib.get_frequencies()
+        zpe = vib.get_zero_point_energy()
+
+        # Try to obtain the Hessian matrix; if retrieval fails, set to None.
+        try:
+            hessian = vib.get_hessian()
+        except Exception:
+            hessian = None
+
+        # Clean up the temporary files created during the analysis.
+        vib.clean()
+        return frequencies, zpe, hessian
+
+    except Exception as error:
+        logging.error("Error in vibrational properties calculation: %s", error)
+        raise
+
+    finally:
+        # If a random temporary directory was created, remove it.
+        if temporary_dir_created:
+            shutil.rmtree(work_dir)
+
