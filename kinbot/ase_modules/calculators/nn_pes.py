@@ -159,7 +159,18 @@ class Nn_surr(Calculator):
         self.results["energy"] = self.get_potential_energy(atoms=atoms)
         self.results["forces"] = self.get_forces(atoms=atoms)
 
-    def get_potential_energy(self, atoms=None, **kwargs):
+    def get_potential_energy(
+        self,
+        atoms=None,
+        calc_type: Literal["gaussian", "default"] = "default",
+        **kwargs,
+    ):
+        """
+        In some cases we want to switch between the default cheap energy and
+        a higher level dft method. By passing calc_type="gaussian" we can use
+        the gaussian calculator to get the energy on a dft level.
+        """
+
         # Update atoms object if it's provided and changed
         if atoms is not None:
             self.atoms = atoms
@@ -171,6 +182,14 @@ class Nn_surr(Calculator):
                 return energy_hartree
             else:
                 return energy_hartree * HARTREE_TO_EV
+
+        if calc_type == "gaussian":
+            calc = self.get_energy_calculator(calc_type="gaussian")
+            if self.unit == "hartree":
+                # ASE returns energy in Ev
+                return calc.get_potential_energy(self.atoms) / HARTREE_TO_EV
+            else:
+                return calc.get_potential_energy(self.atoms)
 
         # for some systems the AIMNet model is not able to predict the energy
         # in this case, we use the EquiformerV2 model to predict the energy
@@ -186,6 +205,7 @@ class Nn_surr(Calculator):
                 return energy_EV
         except:
             energy_hartree = self.force_calculator.get_potential_energy(self.atoms)
+            # equiformerv2 was trained on the Hartree unit
             if self.unit == "hartree":
                 return energy_hartree
             else:
