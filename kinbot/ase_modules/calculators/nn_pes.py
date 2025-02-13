@@ -2,11 +2,11 @@
 from fairchem.core.common.relaxation.ase_utils import OCPCalculator
 from ase.calculators.calculator import Calculator
 import numpy as np
-import os
 from typing import ClassVar, Literal
-from contextlib import redirect_stdout, redirect_stderr
+
 from pathlib import Path
 from functools import partial
+from ase.calculators.gaussian import Gaussian
 
 from aimnet import load_AIMNetMT_ens, load_AIMNetSMD_ens, AIMNetCalculator
 from ase.atoms import Atoms
@@ -32,6 +32,7 @@ CUTOFF = 15.0
 MAX_NEIGHBORS = 60
 HARTREE_TO_EV = 27.211386245988
 
+
 class Nn_surr(Calculator):
     """Neural Network calculator implementing both cheap energy and expensive force calculations."""
     implemented_properties: ClassVar[list[str]] = ["energy", "forces"]
@@ -50,12 +51,11 @@ class Nn_surr(Calculator):
         else:
             self.unit = "ev"
 
-
     @property
     def energy_calculator(self):
         """Lazy loading of energy calculator."""
         if self._energy_calculator is None:
-            self._energy_calculator = self.get_cheap_energy_calculator()
+            self._energy_calculator = self.get_energy_calculator()
         return self._energy_calculator
 
     @property
@@ -65,7 +65,10 @@ class Nn_surr(Calculator):
             self._force_calculator = self.get_force_calculator()
         return self._force_calculator
 
-    def get_cheap_energy_calculator(self) -> "Calculator":
+    def get_energy_calculator(
+        self,
+        calc_type: Literal["AIMNetGas", "AIMNetSMD", "gaussian"] = "AIMNetGas",
+    ) -> Calculator:
         """
         Returns a calculator optimized for quick energy calculations.
 
@@ -74,26 +77,33 @@ class Nn_surr(Calculator):
 
         :return: An instance of AIMNetCalculator
         """
-        with warnings.catch_warnings():
-            warnings.filterwarnings(
-                "ignore",
-                category=FutureWarning,
-                message="You are using `torch.load` with `weights_only=False`"
-            )
-            energy_calcs = {
-                "AIMNetGas": load_AIMNetMT_ens(),
-                "AIMNetSMD": load_AIMNetSMD_ens()
-            }
-        # Temporarily disable logging to prevent log outputs from AIMNetCalculator
-        logging.disable(logging.CRITICAL)
         try:
-            calc = AIMNetCalculator(energy_calcs["AIMNetGas"])
+            with warnings.catch_warnings():
+                warnings.filterwarnings(
+                    "ignore",
+                    category=FutureWarning,
+                    message="You are using `torch.load` with `weights_only=False`",
+                )
+                logging.disable(logging.CRITICAL)
+                if calc_type == "AIMNetGas":
+                    calc = AIMNetCalculator(load_AIMNetMT_ens())
+                elif calc_type == "AIMNetSMD":
+                    calc = AIMNetCalculator(load_AIMNetSMD_ens())
+                elif calc_type == "gaussian":
+                    temp_dir = tempfile.mkdtemp(prefix='gaussian_calc_')
+                    calc = Gaussian(
+                            mem='1GB',
+                            nprocshared=4,
+                            method='wb97xd',
+                            basis="tzvp", #"6-31G(d)"  # '6-311++g(d,p)',
+                            directory=temp_dir
+                        )
         finally:
             # Re-enable logging after calculator creation
             logging.disable(logging.NOTSET)
         return calc
 
-    def get_force_calculator(self) -> 'Calculator':
+    def get_force_calculator(self) -> Calculator:
         """
         Returns a calculator optimized for force calculations without extraneous
         log outputs.
