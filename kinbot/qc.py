@@ -103,8 +103,8 @@ class QuantumChemistry:
                 kwargs['guess'] = 'Mix,Always'
             if ts:
                 # arguments for transition state searches
-                kwargs['method'] = 'am1'
-                kwargs['basis'] = ''
+                kwargs['method'] = 'am1' #'wb97xd'
+                kwargs['basis'] = '' # '6-31G(d)'
 
                 if step == 0:
                     if not self.par['bimol']:
@@ -120,6 +120,9 @@ class QuantumChemistry:
                         'barrierless_saddle' in job or \
                         (mult == 1 and 'R_Addition_MultipleBond' in job):
                         kwargs['guess'] = 'Read,Mix,Always'
+                        print("kwargs.guess was assigned: Read,Mix,Always, Why was this done? this is stupid... ")
+                        print("Re-assigning to just Mix,Always")
+                        kwargs['guess'] = 'Mix,Always'
                     if self.par['bimol']:
                         kwargs['method'] = self.method
                         kwargs['basis'] = self.basis
@@ -142,9 +145,9 @@ class QuantumChemistry:
                 kwargs.pop('freq', None)
                 kwargs.pop('chk', None)
             else:
-                kwargs['freq'] = 'freq'  # ? 
+                kwargs['freq'] = 'freq'  # ?
             if (scan or 'R_Addition_MultipleBond' in job) and not vts:
-                kwargs['method'] = self.scan_method 
+                kwargs['method'] = self.scan_method
                 kwargs['basis'] = self.scan_basis
             if 'barrierless_saddle' in job or 'bls' in job:
                 kwargs['method'] = self.bls_method
@@ -169,7 +172,7 @@ class QuantumChemistry:
                 if len(self.opt) > 0:
                     if self.par['calcall_ts'] == 1 and ts == 1:
                         kwargs['opt'] = 'NoFreeze,TS,CalcAll,NoEigentest,' \
-                                        'MaxCycle=999,{}'.format(self.opt)  
+                                        'MaxCycle=999,{}'.format(self.opt)
                     else:
                         kwargs['opt'] = 'NoFreeze,TS,CalcFC,NoEigentest,' \
                                         'MaxCycle=999,{}'.format(self.opt)  # to overwrite possible CalcAll
@@ -177,7 +180,7 @@ class QuantumChemistry:
                 else:
                     if self.par['calcall_ts'] == 1 and ts == 1:
                         kwargs['opt'] = 'NoFreeze,TS,CalcAll,NoEigentest,' \
-                                        'MaxCycle=999'  
+                                        'MaxCycle=999'
                     else:
                         kwargs['opt'] = 'NoFreeze,TS,CalcFC,NoEigentest,' \
                                         'MaxCycle=999'  # to overwrite possible CalcAll
@@ -331,12 +334,12 @@ class QuantumChemistry:
         else:
             job = 'hir/' + str(species.chemid) + '_hir_' + str(rot_index) + '_' + str(ang_index).zfill(2)
 
-        kwargs = self.get_qc_arguments(job, species.mult, species.charge, 
+        kwargs = self.get_qc_arguments(job, species.mult, species.charge,
                                        ts=species.wellorts, step=1, max_step=1,
                                        high_level=1, hir=1, rigid=rigid)
         if self.par['calc_kwargs']:
             kwargs = self.merge_kwargs(kwargs)
-        if self.qc == 'gauss': 
+        if self.qc == 'gauss':
             code = 'gaussian'
             Code = 'Gaussian'
             if not self.use_sella:
@@ -346,7 +349,7 @@ class QuantumChemistry:
             code = 'qchem'
             Code = 'QChem'
             if not self.use_sella:
-                dihedral = calc_dihedral(geom[fix[0][0]-1], geom[fix[0][1]-1], 
+                dihedral = calc_dihedral(geom[fix[0][0]-1], geom[fix[0][1]-1],
                                          geom[fix[0][2]-1], geom[fix[0][3]-1])[0]
                 kwargs['addsec'] = '\n$opt\nCONSTRAINT\ntors ' \
                                    f'{" ".join(str(f) for f in fix[0])} ' \
@@ -407,8 +410,8 @@ class QuantumChemistry:
                   + str(conf_idx).zfill(self.zf) + '_' \
                   + str(dih_idx).zfill(self.zf)
 
-        kwargs = self.get_qc_arguments(job, species.mult, species.charge, 
-                                       ts=species.wellorts, step=1, max_step=1, 
+        kwargs = self.get_qc_arguments(job, species.mult, species.charge,
+                                       ts=species.wellorts, step=1, max_step=1,
                                        hir=1)
         if self.par['calc_kwargs']:
             kwargs = self.merge_kwargs(kwargs)
@@ -476,12 +479,12 @@ class QuantumChemistry:
                   + str(index).zfill(self.zf)
 
         if species.wellorts:
-            kwargs = self.get_qc_arguments(job, species.mult, species.charge, 
+            kwargs = self.get_qc_arguments(job, species.mult, species.charge,
                                            ts=1, step=1, max_step=1)
         else:
             kwargs = self.get_qc_arguments(job, species.mult, species.charge)
             if self.qc == 'gauss' and not self.use_sella:
-                if self.par['opt'].casefold() == 'Tight'.casefold(): 
+                if self.par['opt'].casefold() == 'Tight'.casefold():
                     kwargs['opt'] = 'CalcFC, Tight'
                 else:
                     kwargs['opt'] = 'CalcFC'
@@ -501,7 +504,7 @@ class QuantumChemistry:
             Code = 'Nn_surr'
         else:
             raise ValueError(f'Unexpected value for qc parameter: {self.qc}')
-        
+
         if semi_emp:
             kwargs['method'] = self.par['semi_emp_method']
             kwargs['basis'] = ''
@@ -513,7 +516,7 @@ class QuantumChemistry:
             kwargs.pop('opt', None)
             kwargs.pop('freq', None)
             template_file = f'{kb_path}/tpl/ase_sella_opt_well.tpl.py'
-        else:        
+        else:
             template_file = f'{kb_path}/tpl/ase_{self.qc}_opt_well.tpl.py'
         template = open(template_file, 'r').read()
         template = template.format(label=job,
@@ -527,8 +530,8 @@ class QuantumChemistry:
                                    Code=Code,    # Sella
                                    order=species.wellorts,      # Sella
                                    sella_kwargs=self.par['sella_kwargs']  # Sella
-                                   )    
-        
+                                   )
+
         with open(f'{job}.py', 'w') as f:
             f.write(template)
 
@@ -566,7 +569,7 @@ class QuantumChemistry:
                              ppn=self.ppn,
                              qc_command=self.qc_command,
                              working_dir=os.getcwd())
-        
+
         with open(f'{job0}.py', 'w') as f:
             f.write(t0)
         with open(f'{job1}.py', 'w') as f:
@@ -576,7 +579,7 @@ class QuantumChemistry:
 
         return 0
 
-    def qc_opt(self, species, geom, high_level=0, mp2=0, bls=0, ext=None, 
+    def qc_opt(self, species, geom, high_level=0, mp2=0, bls=0, ext=None,
                fdir=None, do_vdW=False):
         '''
         Creates a geometry optimization input and runs it.
@@ -611,7 +614,7 @@ class QuantumChemistry:
         if self.qc == 'gauss':
             code = 'gaussian'
             Code = 'Gaussian'
-            if self.par['opt'].casefold() == 'Tight'.casefold(): 
+            if self.par['opt'].casefold() == 'Tight'.casefold():
                 kwargs['opt'] = 'CalcFC, Tight'
             else:
                 kwargs['opt'] = 'CalcFC'
@@ -620,13 +623,13 @@ class QuantumChemistry:
             Code = 'QChem'
         elif self.qc == 'nwchem':
             code = 'nwchem'
-            Code = 'NWChem'   
+            Code = 'NWChem'
         elif self.qc == 'nn_pes':
             code = 'nn_pes'
             Code = 'Nn_surr'
         else:
             raise ValueError(f'Unexpected value for qc parameter: {self.qc}')
-        
+
         if mp2:
             kwargs['method'] = self.scan_method
             kwargs['basis'] = self.scan_basis
@@ -643,7 +646,7 @@ class QuantumChemistry:
             template_file = f'{kb_path}/tpl/ase_sella_opt_well.tpl.py'
         else:
             template_file = f'{kb_path}/tpl/ase_{self.qc}_opt_well.tpl.py'
-        
+
         template = open(template_file, 'r').read()
         template = template.format(label=job,
                                    kwargs=kwargs,
@@ -678,7 +681,7 @@ class QuantumChemistry:
         if fdir is not None:
             job = f'{fdir}/{job}'
 
-        kwargs = self.get_qc_arguments(job, species.mult, species.charge, ts=1, 
+        kwargs = self.get_qc_arguments(job, species.mult, species.charge, ts=1,
                                        step=1, max_step=1, high_level=1)
         if self.par['calc_kwargs']:
             kwargs = self.merge_kwargs(kwargs)
@@ -696,7 +699,7 @@ class QuantumChemistry:
             Code = 'Nn_surr'
         else:
             raise ValueError(f'Unrecognized qc option: {self.qc}')
-        
+
         if self.use_sella:
             kwargs.pop('addsec', None)
             kwargs.pop('opt', None)
@@ -757,8 +760,8 @@ class QuantumChemistry:
             f.write(template)
 
         self.submit_qc(job)
-        
-        return job 
+
+        return job
 
     def qc_vts(self, reac, geom, step, equiv, asymptote, step0_geom):
         '''
@@ -775,12 +778,12 @@ class QuantumChemistry:
 
         if self.qc == 'gauss' and not self.par['vrc_tst_scan_sella']:
             kwargs['addsec'] = f'{reac.scan_coo[0]+1} {reac.scan_coo[1]+1} F\n'
-        
+
         if reac.species.natom < 3:
             kwargs.pop('Symm', None)
         if self.par['calc_kwargs']:
             kwargs = self.merge_kwargs(kwargs)
-        
+
         if self.par['vrc_tst_scan_sella']:  # TODO sella globally
             kwargs.pop('opt', None)
             if self.qc == 'gauss':
@@ -838,7 +841,7 @@ class QuantumChemistry:
             f.write(template)
 
         self.submit_qc(job)
-        return job 
+        return job
 
     def submit_qc(self, job, singlejob=1, jobtype=None):
         '''Submit a job to the queue, unless the job:
@@ -994,7 +997,7 @@ class QuantumChemistry:
         # take the last entry
         for row in rows:
             if found_entry:
-                prev_geom = geom  # saves the previous 
+                prev_geom = geom  # saves the previous
             mol = row.toatoms()
             geom = mol.positions
             atoms = np.array(list(mol.symbols.get_chemical_formula('all')))
@@ -1114,7 +1117,7 @@ class QuantumChemistry:
         # open the database
         *_, last_row = self.db.select(name=job)
         # take the last entry
-        
+
         if hasattr(last_row, 'data'):
             zpe = last_row.data.get('zpe')
         else:
@@ -1306,7 +1309,7 @@ class QuantumChemistry:
                     if not log_file_exists:
                         logger.debug(f'Log file {log_file} is not present.')
                         return 0
-            
+
                 # by deleting a log file, you allow restarting a job
                 # open the database
                 rows = self.db.select(name=job)
@@ -1385,7 +1388,7 @@ class QuantumChemistry:
                         raise ValueError(f'Unexpected value: {uvalue}')
                 val_dict.update(user_val_dict)
                 kwargs[key] = ','.join([f'{k}={v}' if v is not None else k for k, v in val_dict.items() ])
-                
+
             else:
                 kwargs[key] = uvalue
         return kwargs
