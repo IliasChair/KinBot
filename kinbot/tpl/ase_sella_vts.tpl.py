@@ -11,6 +11,7 @@ from sella import Sella, Constraints, Internals
 from kinbot.ase_modules.calculators.{code} import {Code}
 from kinbot.stationary_pt import StationaryPoint
 from kinbot import geometry
+from kinbot.constants import EVtoHARTREE
 
 def get_interfragments_param(atoms: Atoms,
                              instance: list[int]):
@@ -33,7 +34,7 @@ def get_interfragments_param(atoms: Atoms,
     """
     species = StationaryPoint.from_ase_atoms(atoms)
     species.characterize()
-    
+
     save_name = copy.copy(species.name)
     closest_to_RA = [[],[]] #each list contains the 2 (or less) closest atoms to the reactive atom in their respective fragment
     fragments, maps = species.start_multi_molecular()
@@ -75,7 +76,7 @@ def get_interfragments_param(atoms: Atoms,
                                 instance[1],
                                 instance[0],
                                 (np.degrees(geometry.calc_angle(point_A, point_B, point_C)))])
-    
+
     #Calculate the dihedrals values:
     if len(closest_to_RA[0]) != 0 and len(closest_to_RA[1]) != 0:
         point_A = species.geom[closest_to_RA[0][0]]
@@ -107,7 +108,7 @@ def get_interfragments_param(atoms: Atoms,
                         instance[1],
                         instance[0],
                         geometry.calc_dihedral(point_A, point_B, point_C, point_D)[0]])
-    
+
     return changes
 
 def same_orientation(initial,
@@ -137,7 +138,7 @@ kwargs = {kwargs}
 if '{Code}' == 'Gaussian':
     kwargs['chk'] = '{label}'.replace('vrctst/', '')
     mol.calc = {Code}(**kwargs)
-    mol.get_potential_energy()
+    mol.get_potential_energy()  # what was this used for?
     kwargs['guess'] = 'Read'
 mol.calc = {Code}(**kwargs)
 mol_prev = copy.deepcopy(mol)
@@ -198,7 +199,7 @@ while 1:
     ok = True
     last = True  # take the last geometry, otherwise the one before that
     if {asymptote}:
-        e = mol.get_potential_energy()
+        e = mol.get_potential_energy("gaussian") * EVtoHARTREE
         break
     try:
         for i in opts[attempt].irun(fmax=fmax, steps=100):
@@ -221,7 +222,7 @@ while 1:
             new_ifps: list[list] = get_interfragments_param(mol, scan_coo)
             if not same_orientation(ifps, new_ifps):
                 break
-                
+
             # Stop if fragments break internal bonds.
             curr_distances = np.array([np.linalg.norm(mol.positions[bond[0]]
                                                       - mol.positions[bond[1]])
@@ -236,7 +237,7 @@ while 1:
                     cons.fix_bond(b)
                 break
             mol_prev = copy.deepcopy(mol)
-            e = mol.get_potential_energy()
+            e = mol.get_potential_energy("gaussian") * EVtoHARTREE
             energies.append(e)
             # when forces don't fully converge, but energy doesn't change anymore
             if len(energies) > 11 and np.std(energies[-10:]) < 1.e-7:
@@ -333,7 +334,7 @@ kwargs['label'] = label
 mol = Atoms(symbols={atom}, positions=frozen_geom)
 mol.calc = {Code}(**kwargs)
 try:
-    e = mol.get_potential_energy()  # single point energy
+    e = mol.get_potential_energy("gaussian") * EVtoHARTREE  # single point energy
     db.write(mol, name=label, data={{'energy': e, 'status': 'normal'}})
 except:
     db.write(mol, name=label, data={{'energy': 10., 'status': 'normal'}})

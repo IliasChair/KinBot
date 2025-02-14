@@ -100,7 +100,7 @@ def calc_vibrations(
     fchk_data = cclib.io.ccopen(fchk_path).parse()
     log_data = cclib.io.ccopen(log_path).parse()
 
-    return fchk_data.vibfreqs, log_data.zpve, fchk_data.hessian
+    return fchk_data.vibfreqs, log_data.zpve, fchk_data.hessian, dft_energy
 
 
 def main():
@@ -142,7 +142,7 @@ def main():
         kwargs = {kwargs}
         mol.calc = {Code}(**kwargs)
         if "{Code}" == "Gaussian":
-            mol.get_potential_energy()
+            mol.get_potential_energy()  # what was this used for?
             kwargs["guess"] = "Read"
             mol.calc = {Code}(**kwargs)
 
@@ -164,40 +164,29 @@ def main():
                     **{sella_kwargs})
 
         converged_fmax = opt.run(fmax=FMAX, steps=STEPS)
-        freqs, zpe, hessian = calc_vibrations(mol, logger)
+        freqs, zpe, hessian, dft_energy = calc_vibrations(mol, logger)
         if validate_frequencies(freqs, {order}):
             converged_freqs = True
-            e = mol.get_potential_energy() * EVtoHARTREE
-            db.write(mol, name="{label}",
-                        data={{"energy": e, "frequencies": freqs,
-                              "zpe": zpe, "hess": hessian,
-                              "status": "normal"}})
             error_free_exec = True
 
             if not converged_fmax:
                 logging.warning(("Hindered Rotor Optimization did not "
                                 "converge according fmax criteria at "
                                 f"{{FMAX}}, but freqs are valid"))
-            else:
-                logger.info(
-                    ("Hindered Rotor Optimization successfully converged. "
-                    f"for {label}. Final energy: {{e}}"))
+
+            logger.info(
+                ("Hindered Rotor Optimization successfully converged. "
+                f"for {label}. Final energy: {{dft_energy*EVtoHARTREE}} "
+                "Hartree"))
 
         else:
-            logger.error(("Hindered Rotor Optimization failed to "
-                            f"converge for {label}. within {{STEPS}} steps"))
-            data = {{"status": "error"}}
-            if freqs is not None:
-                data["frequencies"] = freqs
-            db.write(mol, name="{label}", data=data)
+            logger.error((
+                "Hindered Rotor Optimization failed to converge for "
+                f"{label}. within {{STEPS}} steps"))
             error_free_exec = True  # E.g. non-convergence is not an error
 
     except Exception as err:
         logger.error(f"Hindered Rotor Optimization failed: {{err}}")
-        data = {{"status": "error"}}
-        if freqs is not None:
-            data["frequencies"] = freqs
-        db.write(mol, name="{label}", data=data)
         error_free_exec = False
         error_details = {{
             "error_type": type(err).__name__,
@@ -212,25 +201,40 @@ def main():
         # Build termination report.
         BOX_WIDTH = 79
 
-        # Determine final status; non-convergence is considered failure.
-        final_status = "SUCCESS ✔" if (error_free_exec and
-                                converged_freqs) else "FAILURE ✘"
+        # Determine final status; success as long as freqs are valid and no
+        # errors occurred.
+        is_success = True if (error_free_exec and
+                                       converged_freqs) else False
+
+        # build data dictionary
+        data = {{"status": "normal" if is_success else "error"}}
+        if dft_energy in locals():
+            e = dft_energy * EVtoHARTREE
+            data["energy"] = e
+        if freqs in locals():
+            data["frequencies"] = freqs
+        if zpe in locals():
+            data["zpe"] = zpe
+        if hessian in locals():
+            data["hess"] = hessian
 
         # Build the report lines using formatted strings.
         report_lines = [
             "Hindered Rotor Optimization Termination Report",
-            f"Status:         {{final_status}}",
+            f"Status:         {{'SUCCESS ✔' if is_success else 'FAILURE ✘'}}",
             f"Converged(fmax): {{converged_fmax}}",
             f"Converged(freqs): {{converged_freqs}}",
             f"Error-free:     {{error_free_exec}}",
             f"order:          {order}"
         ]
-        if ("e" in locals() and "zpe" in locals() and "freqs" in locals()):
+        if "energy" in data:
+            report_lines.append(f"Energy:         {{data['energy']}}")
+        if "zpe" in data:
+            report_lines.append(f"ZPE:            {{data['zpe']}}")
+        if "frequencies" in data:
             report_lines.extend([
-                f"Energy:         {{e}}",
-                f"ZPE:            {{zpe}}",
-                f"Frequencies: ",
-                f"{{freqs}}"
+                "Frequencies: ",
+                f"{{data['frequencies']}}"
             ])
 
         # Build the bounding box using fixed BOX_WIDTH.

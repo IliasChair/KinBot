@@ -9,6 +9,7 @@ from sella import Sella, Constraints
 
 from kinbot.ase_modules.calculators.{code} import {Code}
 from kinbot.stationary_pt import StationaryPoint
+from kinbot.constants import EVtoHARTREE
 
 
 
@@ -19,7 +20,7 @@ mol = Atoms(symbols={atom},
 kwargs = {kwargs}
 mol.calc = {Code}(**kwargs)
 if '{Code}' == 'Gaussian':
-    mol.get_potential_energy()
+    mol.get_potential_energy()  # what was this used for?
     mol.calc = {Code}(**kwargs)
 
 const = Constraints(mol)
@@ -50,7 +51,7 @@ opt = Sella(mol,
 try:
     mol.calc.label = '{label}'
     opt.run(fmax=1e-4, steps=500)
-    e = mol.get_potential_energy()
+    e = mol.get_potential_energy("gaussian") * EVtoHARTREE
     db.write(mol, name='{label}',
              data={{'energy': e, 'status': 'normal'}})
 except (RuntimeError, ValueError):

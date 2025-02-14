@@ -5,7 +5,7 @@ from ase.db import connect
 from sella import Sella, Constraints
 
 from kinbot.ase_modules.calculators.{code} import {Code}
-
+from kinbot.constants import EVtoHARTREE
 db = connect('{working_dir}/kinbot.db')
 mol = Atoms(symbols={atom},
             positions={geom})
@@ -42,7 +42,7 @@ opt = Sella(mol,
 try:
     cvgd = opt.run(fmax=0.1, steps=500)
     if cvgd:
-        e = mol.get_potential_energy()
+        e = mol.get_potential_energy("gaussian") * EVtoHARTREE
     else:  # TODO Eventually we might want to correct something in case it fails.
         raise RuntimeError
 except (RuntimeError, ValueError):

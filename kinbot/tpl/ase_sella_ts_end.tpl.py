@@ -60,6 +60,7 @@ def calc_vibrations(mol):
     init_dir = os.getcwd()
 
     # First attempt
+    dft_energy = None
     try:
         mol.calc = Gaussian(
             mem='8GB',
@@ -77,7 +78,7 @@ def calc_vibrations(mol):
             os.mkdir('{label}_vib')
         os.chdir('{label}_vib')
 
-        e = mol.get_potential_energy()
+        dft_energy = mol.get_potential_energy()
 
     except RuntimeError as err:
         print("initial gaussian calculation failed in {label}")
@@ -101,7 +102,7 @@ def calc_vibrations(mol):
 
         # Change back to temporary directory
         os.chdir('{label}_vib')
-        e = mol.get_potential_energy()
+        dft_energy = mol.get_potential_energy()
 
     # Rest of the function remains the same
     create_fchk()
@@ -114,7 +115,7 @@ def calc_vibrations(mol):
 
     # Return to initial directory
     os.chdir(init_dir)
-    return freqs, zpe, hessian
+    return freqs, zpe, hessian, dft_energy
 
 db = connect('{working_dir}/kinbot.db')
 mol = Atoms(symbols={atom},
@@ -123,7 +124,7 @@ mol = Atoms(symbols={atom},
 kwargs = {kwargs}
 mol.calc = {Code}(**kwargs)
 if '{Code}' == 'Gaussian':
-    mol.get_potential_energy()
+    mol.get_potential_energy()  # what was this used for?
     kwargs['guess'] = 'Read'
     mol.calc = {Code}(**kwargs)
 
@@ -141,11 +142,12 @@ try:
     converged = False
     fmax = 1e-4
     attempts = 1
-    steps=500
+    steps = 500
+    e = None
     while not converged and attempts <= 3:
         mol.calc.label = '{label}'
         converged = opt.run(fmax=fmax, steps=steps)
-        freqs, zpe, hessian = calc_vibrations(mol)
+        freqs, zpe, hessian, dft_energy = calc_vibrations(mol)
         if (np.count_nonzero(np.array(freqs) < 0) > 2  # More than two imag frequencies
                 or np.count_nonzero(np.array(freqs) < -50) >= 2  # More than one frequency smaller than 50i
                 or np.count_nonzero(np.array(freqs) < 0) == 0):  # No imaginary frequencies
@@ -161,7 +163,7 @@ try:
         else:
             converged = True
             print(f"Converged, with frequencies: {{freqs}}")
-            e = mol.get_potential_energy() * EVtoHARTREE
+            e = dft_energy * EVtoHARTREE
             db.write(mol, name='{label}',
                      data={{'energy': e, 'frequencies': freqs, 'zpe': zpe,
                             'hess': hessian, 'status': 'normal'}})
