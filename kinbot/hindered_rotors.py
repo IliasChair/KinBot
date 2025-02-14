@@ -153,16 +153,16 @@ class HIR:
                 if any([st < 0 for st in status]):
                     continue
                 energies = self.hir_energies[rotor]
-                if abs(energies[0] - self.species.energy) * constants.AUtoKCAL > 1.5:
+                if abs(energies[0] - self.species.energy) * constants.AUtoKCAL > 3:
                     logger.error(
                         f'0 angle rotor for rotor {rotor} has a different energy than '
                         f'the optimized structure for {self.species.name} '
                         f'({energies[0]} vs {self.species.energy}).'
                     )
                     logger.error(
-                        'The starting geometry of the 0 angle rotor is derived from previous conformer searches'
-                        'a energy mismatch is possible if the the conformer search optimiszation did not converge.'
-                        'Energy of -1 indicates that the calculation did not converge or resulted in an error'
+                        'The starting geometry of the 0 angle rotor is derived from previous conformer searches. '
+                        'An energy mismatch is possible if the the conformer search optimiszation did not converge. '
+                        'Energy of -1 indicates that the calculation did not converge or resulted in an error '
                         'This might be caused by mismatch in methods for the conformer search and the HIR calculation.'
                     )
                     #sys.exit(1)
