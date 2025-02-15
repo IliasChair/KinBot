@@ -67,7 +67,7 @@ class Nn_surr(Calculator):
 
     def get_energy_calculator(
         self,
-        calc_type: Literal["AIMNetGas", "AIMNetSMD", "gaussian"] = "AIMNetGas",
+        calc_type: Literal["AIMNetGas", "AIMNetSMD", "gaussian"] = "gaussian",
     ) -> Calculator:
         """
         Returns a calculator optimized for quick energy calculations.
@@ -92,10 +92,10 @@ class Nn_surr(Calculator):
                 elif calc_type == "gaussian":
                     temp_dir = tempfile.mkdtemp(prefix='gaussian_calc_')
                     calc = Gaussian(
-                            mem='1GB',
-                            nprocshared=4,
+                            mem='8GB',
+                            nprocshared=8,
                             method='wb97xd',
-                            basis="tzvp", #"6-31G(d)"  # '6-311++g(d,p)',
+                            basis="6-31G(d)", #"6-31G(d)"  # '6-311++g(d,p)',
                             directory=temp_dir
                         )
         finally:
@@ -197,13 +197,20 @@ class Nn_surr(Calculator):
             # the calculator returns an array, we have to convert it to a float using .item()
             energy_EV = self.energy_calculator.get_potential_energy(
                 self.atoms
-            ).item()
+            )
+
+            if type(energy_EV) is np.ndarray:
+                energy_EV = energy_EV.item()
 
             if self.unit == "hartree":
                 return energy_EV / HARTREE_TO_EV
             else:
                 return energy_EV
-        except:
+        except Exception as error:
+            # Log the error that caused the exception.
+            logging.error((
+                f"Error in energy_calculation using energy_calculator: {error}"
+            ))
             energy_hartree = self.force_calculator.get_potential_energy(self.atoms)
             # equiformerv2 was trained on the Hartree unit
             if self.unit == "hartree":
