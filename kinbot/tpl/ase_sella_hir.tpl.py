@@ -32,6 +32,7 @@ from sella import Sella, Constraints
 
 from kinbot.constants import EVtoHARTREE
 from kinbot.ase_modules.calculators.{code} import {Code}
+from kinbot.ase_modules.calculators.nn_pes import make_rms_callback, RMSConvergence
 from kinbot.ase_sella_util import get_valid_multiplicity, validate_frequencies
 import cclib
 import subprocess
@@ -46,8 +47,8 @@ CALC_DIR = os.path.join(os.path.dirname(LABEL) or ".",
                          f"{{BASE_LABEL}}_hir_dir")
 
 FMAX = 0.001
-DMAX = 0.1
 STEPS = 500
+RMS_THRESH = 0.00005  # RMS displacement threshold (Å)
 
 
 def setup_gaussian_calc(mol: Atoms, mult: Optional[int] = None) -> None:
@@ -127,7 +128,8 @@ def main():
 
     db = connect("{working_dir}/kinbot.db")
     mol = Atoms(symbols={atom}, positions={geom})
-    freqs = None
+
+    dft_energy, freqs, zpe, hessian = (None,) * 4
 
     # Apply dihedral constraints.
     const = Constraints(mol)
@@ -135,8 +137,10 @@ def main():
     const.fix_dihedral(fix_indices)
 
     error_free_exec = False
+    rms_threshold = [RMS_THRESH] # mutable
     converged_fmax = False
     converged_freqs = False
+    converged_rms = True
     try:
         # Setup initial calculator
         kwargs = {kwargs}
@@ -151,6 +155,12 @@ def main():
         logger.info("Starting hindered rotor optimization for {label}")
         logger.info(f"Configuration: order={order}, constraints={{const}}")
 
+        # Handle monoatomic case
+        if len(mol) == 1:
+            raise ValueError("Hindered rotor optimization is not "
+                             "applicable to monoatomic species.")
+
+        # Optimization
         sella_log = os.path.join(CALC_DIR, f"{{BASE_LABEL}}_sella.log")
         sella_traj = os.path.join(CALC_DIR, f"{{BASE_LABEL}}_sella.traj")
         if os.path.isfile(sella_log):
@@ -163,7 +173,16 @@ def main():
                     logfile=sella_log,
                     **{sella_kwargs})
 
-        converged_fmax = opt.run(fmax=FMAX, steps=STEPS)
+        # Attach RMS callback to check every step
+        opt.attach(make_rms_callback(mol, rms_threshold), interval=1)
+
+        try:
+            converged_fmax = opt.run(fmax=FMAX, steps=STEPS)
+        except RMSConvergence:
+            converged_rms = True
+            logger.info("RMS convergence threshold reached. "
+                        "Stopping optimization.")
+
         freqs, zpe, hessian, dft_energy = calc_vibrations(mol, logger)
         if validate_frequencies(freqs, {order}):
             converged_freqs = True
@@ -208,15 +227,18 @@ def main():
 
         # build data dictionary
         data = {{"status": "normal" if is_success else "error"}}
-        if dft_energy in locals():
+        if dft_energy is not None:
             e = dft_energy * EVtoHARTREE
             data["energy"] = e
-        if freqs in locals():
+        if freqs is not None:
             data["frequencies"] = freqs
-        if zpe in locals():
+        if zpe is not None:
             data["zpe"] = zpe
-        if hessian in locals():
+        if hessian is not None:
             data["hess"] = hessian
+
+        db.write(mol, name="{label}",
+                data=data)
 
         # Build the report lines using formatted strings.
         report_lines = [
