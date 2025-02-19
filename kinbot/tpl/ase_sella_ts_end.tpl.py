@@ -1,186 +1,302 @@
+"""
+ASE-Sella optimization template for KinBot.
+
+This template handles molecular geometry optimization using ASE and Sella,
+with frequency calculations and proper error handling. It supports both
+minimum and transition state optimizations.
+
+Template variables:
+    {{label}}         - Calculation identifier (may include subdirectory)
+    {{working_dir}}   - Working directory path
+    {{atom}}          - Atomic symbols list
+    {{geom}}          - Atomic coordinates list
+    {{code}}          - Calculator module name
+    {{Code}}          - Calculator class name
+    {{kwargs}}        - Calculator keyword arguments
+    {{sella_kwargs}}  - Sella optimizer parameters
+"""
+
 import os
-import sys
-import shutil
+import logging
+import traceback
+from typing import Optional
 
 import numpy as np
 from ase import Atoms
-from ase.data import atomic_numbers
 from ase.db import connect
-#from ase.vibrations import Vibrations
 from ase.calculators.gaussian import Gaussian
 from sella import Sella
 
 from kinbot.constants import EVtoHARTREE
 from kinbot.ase_modules.calculators.{code} import {Code}
-#from kinbot.stationary_pt import StationaryPoint
-#from kinbot.frequencies import get_frequencies
+from kinbot.ase_modules.calculators.nn_pes import make_rms_callback, RMSConvergence
+from kinbot.ase_sella_util import get_valid_multiplicity, validate_frequencies
 import cclib
 import subprocess
 
-def get_valid_multiplicity(atoms: Atoms, default_multiplicity: int = 1):
-    """
-    Ensures a valid spin multiplicity for an ASE Atoms object to prevent errors in Gaussian.
+ATTEMPTS = 3
 
-    Parameters:
-    atoms (Atoms): ASE Atoms object
-    default_multiplicity (int): Initial guess for multiplicity
+# Determine the full label and extract the basename. If the provided
+# label includes a directory, BASE_LABEL will be only the final component.
+LABEL = "{label}"
+BASE_LABEL = os.path.basename(LABEL)
+# Build the calculation directory path. If LABEL includes a directory,
+# we join that dirname with the base identifier directory.
+CALC_DIR = os.path.join(os.path.dirname(LABEL) or ".",
+                         f"{{BASE_LABEL}}_ts_end_dir")
 
-    Returns:
-    int: Corrected multiplicity
-    """
-    # Compute the total number of electrons
-    total_electrons = sum(atomic_numbers[atom.symbol] for atom in atoms)
-
-    # Ensure multiplicity is valid
-    if total_electrons % 2 == 0:
-        # Even electron count -> Multiplicity must be odd (1, 3, 5, ...)
-        if default_multiplicity % 2 == 0:
-            default_multiplicity += 1
-    else:
-        # Odd electron count -> Multiplicity must be even (2, 4, 6, ...)
-        if default_multiplicity % 2 == 1:
-            default_multiplicity += 1
-
-    return default_multiplicity
+FMAX = 0.0001  # also try 0.0004
+STEPS = 500
+RMS_THRESH = 0.00005  # RMS displacement threshold (Å)
 
 
-def create_fchk():
-    """
-    Run Gaussian's formchk utility to create a formatted checkpoint file.
+def setup_gaussian_calc(mol: Atoms, mult: Optional[int] = None) -> None:
+    """Configure Gaussian calculator for the molecule."""
 
-    :param label: Base label used for the checkpoint filename.
-    :type label: str
-    """
-    chkfile = "{label}_vib.chk"
-    fchkfile = "{label}_vib.fchk"
-    subprocess.run(["formchk", chkfile, fchkfile], check=True)
+    calc_params = {{
+        "mem": "8GB",
+        "nprocshared": 4,
+        "method": "wb97xd",
+        "basis": "6-31G(d)",
+        "chk": f"{{BASE_LABEL}}_vib.chk",
+        "freq": "",
+        "extra": "SCF=(XQC, MaxCycle=200)"
+    }}
+    if mult is not None:
+        calc_params["mult"] = mult
 
-def calc_vibrations(mol):
+    mol.calc = Gaussian(**calc_params)
+    mol.calc.label = os.path.join(CALC_DIR, f"{{BASE_LABEL}}_vib")
+
+
+# can later be adaped as a drop in for any calculator
+def calc_vibrations(
+        mol: Atoms, logger: logging.Logger
+        ) -> tuple[np.ndarray, float, np.ndarray]:
+    """Calculate vibrational frequencies."""
     mol = mol.copy()
-    init_dir = os.getcwd()
 
-    # First attempt
+    # Try calculation with default multiplicity
+    setup_gaussian_calc(mol)
     dft_energy = None
     try:
-        mol.calc = Gaussian(
-            mem='8GB',
-            nprocshared=4,
-            method='wb97xd',
-            basis='6-31G(d)',
-            chk="{label}_vib.chk",
-            freq='',
-            extra='SCF=(XQC, MaxCycle=200)'
-        )
-        mol.calc.label = '{label}_vib'
-
-        # Create/change to temporary directory
-        if not os.path.isdir('{label}_vib'):
-            os.mkdir('{label}_vib')
-        os.chdir('{label}_vib')
-
         dft_energy = mol.get_potential_energy()
-
-    except RuntimeError as err:
-        print("initial gaussian calculation failed in {label}")
-        # Return to initial directory before second attempt
-        os.chdir(init_dir)
-
-        # Second attempt with corrected multiplicity
+    except RuntimeError:
+        logger.warning(
+            "Initial calculation failed, retrying with corrected multiplicity")
         mult = get_valid_multiplicity(mol)
-        print(f"trying again witl multiplicity {{mult}}")
-        mol.calc = Gaussian(
-            mem='8GB',
-            nprocshared=4,
-            method='wb97xd',
-            basis='6-31G(d)',
-            chk="{label}_vib.chk",
-            freq='',
-            mult=mult,  # Use corrected multiplicity
-            extra='SCF=(XQC, MaxCycle=200)'
-        )
-        mol.calc.label = '{label}_vib'
-
-        # Change back to temporary directory
-        os.chdir('{label}_vib')
+        setup_gaussian_calc(mol, mult)
         dft_energy = mol.get_potential_energy()
+    if dft_energy is None:
+        raise RuntimeError(
+            "Vibrational frequency calculation failed for {label}")
 
-    # Rest of the function remains the same
-    create_fchk()
-    parsed_data = cclib.io.ccopen("{label}_vib.fchk").parse()
-    freqs = parsed_data.vibfreqs
-    hessian = parsed_data.hessian
+    # Process frequency results
+    chk_path = os.path.join(CALC_DIR, f"{{BASE_LABEL}}_vib.chk")
+    fchk_path = os.path.join(CALC_DIR, f"{{BASE_LABEL}}_vib.fchk")
+    log_path = os.path.join(CALC_DIR, f"{{BASE_LABEL}}_vib.log")
+    subprocess.run(["formchk", chk_path, fchk_path], check=True)
 
-    parsed_data = cclib.io.ccopen('{label}_vib.log').parse()
-    zpe = parsed_data.zpve
+    fchk_data = cclib.io.ccopen(fchk_path).parse()
+    log_data = cclib.io.ccopen(log_path).parse()
 
-    # Return to initial directory
-    os.chdir(init_dir)
-    return freqs, zpe, hessian, dft_energy
+    return fchk_data.vibfreqs, log_data.zpve, fchk_data.hessian, dft_energy
 
-db = connect('{working_dir}/kinbot.db')
-mol = Atoms(symbols={atom},
-            positions={geom})
 
-kwargs = {kwargs}
-mol.calc = {Code}(**kwargs)
-if '{Code}' == 'Gaussian':
-    mol.get_potential_energy()  # what was this used for?
-    kwargs['guess'] = 'Read'
-    mol.calc = {Code}(**kwargs)
+def main():
+    """
+    Main optimization routine.
 
-if os.path.isfile('{label}_sella.log'):
-    os.remove('{label}_sella.log')
+    Manages molecular geometry optimization, frequency validation, and
+    result logging.
+    """
+    # Configure logging
+    logging.basicConfig(
+        filename=os.path.join(
+            CALC_DIR, f"{{BASE_LABEL}}_ts_end_detailed.log"),
+        level=logging.INFO,
+        format="%(asctime)s - %(levelname)s - %(message)s"
+    )
+    logger = logging.getLogger(__name__)
 
-sella_kwargs = {sella_kwargs}
-opt = Sella(mol,
-            order=1,
-            trajectory='{label}.traj',
-            logfile='{label}_sella.log',
-            **sella_kwargs)
-freqs = []
-try:
-    converged = False
-    fmax = 1e-4
-    attempts = 1
-    steps = 500
-    e = None
-    while not converged and attempts <= 3:
-        mol.calc.label = '{label}'
-        converged = opt.run(fmax=fmax, steps=steps)
-        freqs, zpe, hessian, dft_energy = calc_vibrations(mol)
-        if (np.count_nonzero(np.array(freqs) < 0) > 2  # More than two imag frequencies
-                or np.count_nonzero(np.array(freqs) < -50) >= 2  # More than one frequency smaller than 50i
-                or np.count_nonzero(np.array(freqs) < 0) == 0):  # No imaginary frequencies
-            print(f'Incorrect number of imaginary frequencies for order=1. '
-                  f'Expected exactly 1 imaginary frequency, but found '
-                  f'{{np.count_nonzero(np.array(freqs) < 0)}}. Frequencies: {{freqs}}')
-            converged = False
-            mol.calc.label = '{label}'
-            attempts += 1
-            fmax *= 0.3
-            if attempts <= 3:
-                print(f'Retrying with a tighter criterion: fmax={{fmax}}.')
+    db = connect("{working_dir}/kinbot.db")
+    mol = Atoms(symbols={atom}, positions={geom})
+
+    dft_energy, freqs, zpe, hessian = (None,) * 4
+
+    error_free_exec = False
+
+    # Use a local copy of FMAX to avoid modifying the global value.
+    fmax_loc = FMAX
+    rms_threshold = [RMS_THRESH] # mutable
+    converged_fmax = False
+    converged_freqs = False
+    converged_rms = True
+    try:
+        # Setup initial calculator
+        kwargs = {kwargs}
+        mol.calc = {Code}(**kwargs)
+        if "{Code}" == "Gaussian":
+            mol.get_potential_energy()  # what was this used for?
+            kwargs["guess"] = "Read"
+            mol.calc = {Code}(**kwargs)
+
+        mol.calc.label = "{label}"
+        # Log initial configuration.
+        logger.info("Starting optimization for {label}")
+
+        # Handle monoatomic case
+        if len(mol) == 1:
+            dft_energy = mol.get_potential_energy() * EVtoHARTREE
+            freqs = np.array([])
+            zpe = 0.0
+            hessian = np.zeros([3, 3])
+            logger.info("Completed monoatomic calculation")
+            converged_freqs = True
+            error_free_exec = True
+            return
+
+        # Optimization
+        sella_log = os.path.join(CALC_DIR, f"{{BASE_LABEL}}_sella.log")
+        sella_traj = os.path.join(CALC_DIR, f"{{BASE_LABEL}}_sella.traj")
+        if os.path.isfile(sella_log):
+            os.remove(sella_log)
+
+        opt = Sella(mol,
+                    order=1,
+                    trajectory=sella_traj,
+                    logfile=sella_log,
+                   **{sella_kwargs})
+
+        # Attach RMS callback to check every step
+        opt.attach(make_rms_callback(mol, rms_threshold), interval=1)
+
+        for attempt in range(ATTEMPTS):
+            try:
+                converged_fmax = opt.run(fmax=fmax_loc, steps=STEPS)
+            except RMSConvergence:
+                converged_rms = True
+                logger.info("RMS convergence threshold reached. "
+                            "Stopping optimization.")
+
+            freqs, zpe, hessian, dft_energy = calc_vibrations(mol, logger)
+            if validate_frequencies(freqs, order=1):
+                converged_freqs = True
+                error_free_exec = True
+
+                if not converged_fmax:
+                    logging.warning(
+                        ("TS-END Optimization did not converge according "
+                        f"to fmax criteria at {{fmax_loc}} but "
+                        "freqs are valid"))
+                logger.info(
+                    ("Optimization successfully converged. "
+                    f"for {label}. Final energy: {{dft_energy*EVtoHARTREE}} "
+                    "Hartree"))
+                break
+
+            # if its a *frequency* convergence issue:
+            # reduce fmax and give it a few more tries.
+            if converged_fmax:  # forces converged, but freqs are invalid
+                fmax_loc *= 0.3
+                logger.info(("invalid freqs for first-order optimization "
+                              f"freqs: {{freqs}}\n but converged according to "
+                              f"fmax criteria, continuing with reduced "
+                              f"fmax={{fmax_loc}}"))
+                continue
+            if converged_rms:
+                rms_threshold[0] *= 0.3
+                logger.info(("invalid freqs for first-order optimization "
+                              f"freqs: {{freqs}}\n but converged according to "
+                              f"rms criteria, continuing with reduced "
+                              f"rms_threshold={{rms_threshold[0]}}"))
+                continue
+            # if its a *force* convergence issue:
+            # just give it a few more tries and keep fmax the same.
+            else:  # or else it must be a force convergence issue
+                logger.info(("invalid freqs for first-order optimization "
+                            f"freqs: {{freqs}}\n  and non-convergence "
+                            "according to fmax criteria, keeping fmax at "
+                            f"{{fmax_loc}} and continuing"))
+                continue
         else:
-            converged = True
-            print(f"Converged, with frequencies: {{freqs}}")
-            e = dft_energy * EVtoHARTREE
-            db.write(mol, name='{label}',
-                     data={{'energy': e, 'frequencies': freqs, 'zpe': zpe,
-                            'hess': hessian, 'status': 'normal'}})
-            print(f'Wrote {label} to database')
-    if not converged:
-        raise RuntimeError
-except (RuntimeError, ValueError):
-    data = {{'status': 'error'}}
-    if freqs is not None:
-        data['frequencies'] = freqs
-    db.write(mol, name='{label}', data=data)
+            logger.error((
+                f"TS-END Failed opt to converge after {{ATTEMPTS}} attempts "
+                f"for {label}. within {{STEPS}} steps"))
+            error_free_exec = True  # E.g. non-convergence is not an error
 
-with open('{label}.log', 'a') as f:
-    f.write('done\n')
-    f.write("########################################\n")
-    f.write(f"converged: {{converged}}\n")
-    f.write(f"energy: {{e}}, zpe: {{zpe}}, hessian: {{hessian is not None}}\n")
-    f.write(f"freqs: {{freqs}}\n")
-    f.write("########################################\n")
-    f.write('done\n')
+    except Exception as err:
+        logger.error(f"TS-END Optimization failed: {{err}}")
+        error_free_exec = False
+        error_details = {{
+            "error_type": type(err).__name__,
+            "error_message": str(err),
+            "traceback": traceback.format_exc()
+        }}
+        logger.error("Error occurred: %s", error_details["error_type"])
+        logger.error("Error message: %s", error_details["error_message"])
+        logger.error("Traceback:\n%s", error_details["traceback"])
+
+    finally:
+        # Build termination report.
+        BOX_WIDTH = 79
+
+        # Determine final status; success as long as freqs are valid and no
+        # errors occurred.
+        is_success = True if (error_free_exec and
+                                       converged_freqs) else False
+
+        # build data dictionary
+        data = {{"status": "normal" if is_success else "error"}}
+        if dft_energy is not None:
+            e = dft_energy * EVtoHARTREE
+            data["energy"] = e
+        if freqs is not None:
+            data["frequencies"] = freqs
+        if zpe is not None:
+            data["zpe"] = zpe
+        if hessian is not None:
+            data["hess"] = hessian
+
+        db.write(mol, name="{label}",
+                data=data)
+
+        # Build the report lines using formatted strings.
+        report_lines = [
+            "TS-END Optimization Termination Report",
+            f"Status:         {{'SUCCESS ✔' if is_success else 'FAILURE ✘'}}",
+            f"Converged(fmax): {{converged_fmax}}",
+            f"Converged(freqs): {{converged_freqs}}",
+            f"Error-free:     {{error_free_exec}}",
+            f"order:          1"
+        ]
+        if "energy" in data:
+            report_lines.append(f"Energy:         {{data['energy']}}")
+        if "zpe" in data:
+            report_lines.append(f"ZPE:            {{data['zpe']}}")
+        if "frequencies" in data:
+            report_lines.extend([
+                "Frequencies: ",
+                f"{{data['frequencies']}}"
+            ])
+
+        # Build the bounding box using fixed BOX_WIDTH.
+        top_border = f"╔{{'═' * (BOX_WIDTH + 2)}}╗"
+        bottom_border = f"╚{{'═' * (BOX_WIDTH + 2)}}╝"
+        body = "\n".join(f"║ {{line.ljust(BOX_WIDTH)}} ║"
+                         for line in report_lines)
+        report_box = f"{{top_border}}\n{{body}}\n{{bottom_border}}"
+
+        # Send the termination message to the logger and write it to file.
+        logger.info("\n" + report_box)
+
+        # Write the termination message to the log file.
+        with open("{label}.log", "a") as f:
+            f.write("\n" + report_box + "\n")
+            f.write("done\n")
+
+
+if __name__ == "__main__":
+    if not os.path.exists(CALC_DIR):
+        os.makedirs(CALC_DIR)
+    main()
