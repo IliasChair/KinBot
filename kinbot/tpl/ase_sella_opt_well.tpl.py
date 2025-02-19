@@ -30,6 +30,7 @@ from sella import Sella
 
 from kinbot.constants import EVtoHARTREE
 from kinbot.ase_modules.calculators.{code} import {Code}
+from kinbot.ase_modules.calculators.nn_pes import make_rms_callback, RMSConvergence
 from kinbot.ase_sella_util import get_valid_multiplicity, validate_frequencies
 import cclib
 import subprocess
@@ -45,9 +46,9 @@ BASE_LABEL = os.path.basename(LABEL)
 CALC_DIR = os.path.join(os.path.dirname(LABEL) or ".",
                          f"{{BASE_LABEL}}_dir")
 
-FMAX = 1e-4
-DMAX = 0.05
-STEPS = 1000
+FMAX = 0.0001  # also try 0.0004
+STEPS = 500
+RMS_THRESH = 0.00005  # RMS displacement threshold (Å)
 
 
 def setup_gaussian_calc(mol: Atoms, mult: Optional[int] = None) -> None:
@@ -121,14 +122,17 @@ def main():
 
     db = connect("{working_dir}/kinbot.db")
     mol = Atoms(symbols={atom}, positions={geom})
-    freqs = None
+
+    dft_energy, freqs, zpe, hessian = (None,) * 4
 
     error_free_exec = False
 
     # Use a local copy of FMAX to avoid modifying the global value.
     fmax_loc = FMAX
+    rms_threshold = [RMS_THRESH] # mutable
     converged_fmax = False
     converged_freqs = False
+    converged_rms = True
     try:
         # Setup initial calculator
         kwargs = {kwargs}
@@ -144,12 +148,13 @@ def main():
 
         # Handle monoatomic case
         if len(mol) == 1:
-            e = mol.get_potential_energy() * EVtoHARTREE
-            db.write(mol, name="{label}",
-                    data={{"energy": e, "frequencies": np.array([]),
-                          "zpe": 0.0, "hess": np.zeros([3, 3]),
-                          "status": "normal"}})
+            dft_energy = mol.get_potential_energy() * EVtoHARTREE
+            freqs = np.array([])
+            zpe = 0.0
+            hessian = np.zeros([3, 3])
             logger.info("Completed monoatomic calculation")
+            converged_freqs = True
+            error_free_exec = True
             return
 
         # Optimization
@@ -164,8 +169,17 @@ def main():
                     logfile=sella_log,
                    **{sella_kwargs})
 
+        # Attach RMS callback to check every step
+        opt.attach(make_rms_callback(mol, rms_threshold), interval=1)
+
         for attempt in range(ATTEMPTS):
-            converged_fmax = opt.run(fmax=fmax_loc, steps=STEPS)
+            try:
+                converged_fmax = opt.run(fmax=fmax_loc, steps=STEPS)
+            except RMSConvergence:
+                converged_rms = True
+                logger.info("RMS convergence threshold reached. "
+                            "Stopping optimization.")
+
             freqs, zpe, hessian, dft_energy = calc_vibrations(mol, logger)
             if validate_frequencies(freqs, {order}):
                 converged_freqs = True
@@ -175,16 +189,36 @@ def main():
                     logging.warning(("Optimization did not converge according "
                                     f"to fmax criteria at {{fmax_loc}} but "
                                     "freqs are valid"))
-
                 logger.info(
                     ("Optimization successfully converged. "
                     f"for {label}. Final energy: {{dft_energy*EVtoHARTREE}} "
                     "Hartree"))
-
                 break
 
-            fmax_loc *= 0.3
-            logger.info(f"Retrying with fmax={{fmax_loc}}")
+            # if its a *frequency* convergence issue:
+            # reduce fmax and give it a few more tries.
+            if converged_fmax:  # forces converged, but freqs are invalid
+                fmax_loc *= 0.3
+                logger.info(("invalid freqs for {order}-order optimization "
+                              f"freqs: {{freqs}}\n but converged according to "
+                              f"fmax criteria, continuing with reduced "
+                              f"fmax={{fmax_loc}}"))
+                continue
+            if converged_rms:
+                rms_threshold[0] *= 0.3
+                logger.info(("invalid freqs for {order}-order optimization "
+                              f"freqs: {{freqs}}\n but converged according to "
+                              f"rms criteria, continuing with reduced "
+                              f"rms_threshold={{rms_threshold[0]}}"))
+                continue
+            # if its a *force* convergence issue:
+            # just give it a few more tries and keep fmax the same.
+            else:  # or else it must be a force convergence issue
+                logger.info(("invalid freqs for {order}-order optimization "
+                            f"freqs: {{freqs}}\n  and non-convergence "
+                            "according to fmax criteria, keeping fmax at "
+                            f"{{fmax_loc}} and continuing"))
+                continue
         else:
             logger.error((
                 f"Failed to converge after {{ATTEMPTS}} attempts for "
@@ -214,15 +248,18 @@ def main():
 
         # build data dictionary
         data = {{"status": "normal" if is_success else "error"}}
-        if dft_energy in locals():
+        if dft_energy is not None:
             e = dft_energy * EVtoHARTREE
             data["energy"] = e
-        if freqs in locals():
+        if freqs is not None:
             data["frequencies"] = freqs
-        if zpe in locals():
+        if zpe is not None:
             data["zpe"] = zpe
-        if hessian in locals():
+        if hessian is not None:
             data["hess"] = hessian
+
+        db.write(mol, name="{label}",
+                data=data)
 
         # Build the report lines using formatted strings.
         report_lines = [
