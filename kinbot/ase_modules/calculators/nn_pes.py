@@ -7,6 +7,7 @@ from typing import ClassVar, Literal
 from pathlib import Path
 from functools import partial
 from ase.calculators.gaussian import Gaussian
+from kinbot.ase_sella_util import get_valid_multiplicity
 
 from aimnet import load_AIMNetMT_ens, load_AIMNetSMD_ens, AIMNetCalculator
 from ase.atoms import Atoms
@@ -92,11 +93,13 @@ class Nn_surr(Calculator):
                 elif calc_type == "gaussian":
                     temp_dir = tempfile.mkdtemp(prefix='gaussian_calc_')
                     calc = Gaussian(
-                            mem='8GB',
-                            nprocshared=8,
-                            method='wb97xd',
+                            mem='12GB',
+                            nprocshared=4,
+                            method='wb97xd', #M05, tpss
+                            mult=get_valid_multiplicity(self.atoms),
                             basis="6-31G(d)", #"6-31G(d)"  # '6-311++g(d,p)',
-                            directory=temp_dir
+                            directory=temp_dir,
+                            SCF="XQC,Conver=6,Direct"
                         )
         finally:
             # Re-enable logging after calculator creation
@@ -322,3 +325,48 @@ def calculate_vibrational_properties(calculator, work_dir, atoms):
         if temporary_dir_created:
             shutil.rmtree(work_dir)
 
+
+def make_rms_callback(mol: Atoms, threshold_container: list) -> callable:
+    """
+    Create stateful RMS displacement callback with proper initialization.
+
+    :param mol: Target molecule
+    :param threshold_container: Mutable container holding the RMS threshold
+    :return: Configured callback function
+    """
+    state = {
+        'prev_pos': None,  # Will be initialized on first call
+        'initialized': False,
+        'consecutive_below_thresh': 0  # Counter for consecutive steps
+    }
+
+    def check_rms():
+        """Calculate RMS displacement between consecutive steps."""
+        nonlocal state
+        current_pos = mol.get_positions()
+
+        if not state['initialized']:
+            # Initialize on first call (after first step)
+            state['prev_pos'] = current_pos.copy()
+            state['initialized'] = True
+            return
+
+        rms = np.sqrt(np.mean((current_pos - state['prev_pos'])**2))
+        state['prev_pos'] = current_pos.copy()
+
+        if rms < threshold_container[0]:
+            state['consecutive_below_thresh'] += 1
+            if state['consecutive_below_thresh'] >= 2:
+                raise RMSConvergence(
+                    f"RMS convergence {rms:.5f} Å reached for two consecutive steps."
+                )
+        else:
+            state['consecutive_below_thresh'] = 0  # Reset counter if condition not met
+
+    return check_rms
+
+
+# Custom exception for RMS convergence
+class RMSConvergence(Exception):
+    """Exception raised when geometry converges based on RMS displacement."""
+    pass
