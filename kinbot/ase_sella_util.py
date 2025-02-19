@@ -129,7 +129,7 @@ def validate_frequencies(freqs: np.ndarray, order: int) -> bool:
         accepted into the KinBot reaction network.
     """
     n_imag = np.count_nonzero(freqs < 0)
-    n_large_imag = np.count_nonzero(freqs < -50)
+    n_large_imag = np.count_nonzero(freqs < -70)
 
     if order == 0:
         return not (n_imag >= 2 or n_large_imag >= 1)
