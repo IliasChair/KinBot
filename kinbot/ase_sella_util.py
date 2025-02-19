@@ -95,12 +95,12 @@ def validate_frequencies(freqs: np.ndarray, order: int) -> bool:
 
     For minima (order=0):
         * Allows at most one small imaginary frequency
-          (-50 < freq < 0) to account for numerical noise.
+          (-70 < freq < 0) to account for numerical noise.
         * Does not allow any significantly imaginary frequencies
-          (freq < -50).
+          (freq < -70).
         * In other words, returns False if either:
             - Two or more frequencies are less than 0 (n_imag >= 2), or
-            - Any frequency is less than -50 (n_large_imag >= 1).
+            - Any frequency is less than -70 (n_large_imag >= 1).
 
     For transition states (order=1):
         * Generally expects one dominant mode corresponding to the reaction
@@ -113,11 +113,11 @@ def validate_frequencies(freqs: np.ndarray, order: int) -> bool:
             - There are no imaginary frequencies.
 
     .. note::
-        Small imaginary frequencies (between 0 and -50 cm^-1) often appear
+        Small imaginary frequencies (between 0 and -70 cm^-1) often appear
         in quantum chemistry calculations due to numerical imprecision,
         particularly for large, floppy molecules or loose convergence
         criteria. These are typically not chemically meaningful and can be
-        safely ignored. However, frequencies below -50 cm^-1 usually
+        safely ignored. However, frequencies below -70 cm^-1 usually
         indicate real transition vectors that should be investigated.
         When validation fails, KinBot's optimization workflow typically
         reduces the force criterion (fmax) by a factor and retries the
