@@ -1,6 +1,12 @@
 from ase import Atoms
 from ase.data import atomic_numbers
 import numpy as np
+from typing import Optional
+from ase.calculators.gaussian import Gaussian
+import os
+import logging
+import subprocess
+import cclib
 
 
 def get_valid_multiplicity(atoms: Atoms, default_mult: int = 1) -> int:
@@ -136,3 +142,55 @@ def validate_frequencies(freqs: np.ndarray, order: int) -> bool:
     elif order == 1:
         return not (n_imag > 2 or n_large_imag >= 2 or n_imag == 0)
     return False
+
+
+def setup_gaussian_calc(mol: Atoms, BASE_LABEL: str, CALC_DIR: str, mult: Optional[int] = None) -> None:
+    """Configure Gaussian calculator for the molecule."""
+
+    calc_params = {{
+        "mem": "8GB",
+        "nprocshared": 4,
+        "method": "wb97xd",
+        "basis": "6-31G(d)",
+        "chk": f"{BASE_LABEL}_vib.chk",
+        "freq": "",
+        "extra": "SCF=(XQC, MaxCycle=200)"
+    }}
+    if mult is not None:
+        calc_params["mult"] = mult
+
+    mol.calc = Gaussian(**calc_params)
+    mol.calc.label = os.path.join(CALC_DIR, f"{BASE_LABEL}_vib")
+
+
+def calc_vibrations(
+        mol: Atoms, logger: logging.Logger, BASE_LABEL: str, CALC_DIR: str
+        ) -> tuple[np.ndarray, float, np.ndarray, float]:
+    """Calculate vibrational frequencies."""
+    mol = mol.copy()
+
+    # Try calculation with default multiplicity
+    setup_gaussian_calc(mol)
+    dft_energy = None
+    try:
+        dft_energy = mol.get_potential_energy()
+    except RuntimeError:
+        logger.warning(
+            "Initial calculation failed, retrying with corrected multiplicity")
+        mult = get_valid_multiplicity(mol)
+        setup_gaussian_calc(mol, mult)
+        dft_energy = mol.get_potential_energy()
+    if dft_energy is None:
+        raise RuntimeError(
+            "Vibrational frequency calculation failed for {label}")
+
+    # Process frequency results
+    chk_path = os.path.join(CALC_DIR, f"{BASE_LABEL}_vib.chk")
+    fchk_path = os.path.join(CALC_DIR, f"{BASE_LABEL}_vib.fchk")
+    log_path = os.path.join(CALC_DIR, f"{BASE_LABEL}_vib.log")
+    subprocess.run(["formchk", chk_path, fchk_path], check=True)
+
+    fchk_data = cclib.io.ccopen(fchk_path).parse()
+    log_data = cclib.io.ccopen(log_path).parse()
+
+    return fchk_data.vibfreqs, log_data.zpve, fchk_data.hessian, dft_energy
