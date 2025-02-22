@@ -103,8 +103,8 @@ class QuantumChemistry:
                 kwargs['guess'] = 'Mix,Always'
             if ts:
                 # arguments for transition state searches
-                kwargs['method'] = 'am1' #'wb97xd'
-                kwargs['basis'] = '' # '6-31G(d)'
+                kwargs['method'] = 'wb97xd' #  'am1' #'wb97xd'
+                kwargs['basis'] = '6-31G(d)' #'' # '6-31G(d)'
 
                 if step == 0:
                     if not self.par['bimol']:
