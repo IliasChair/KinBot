@@ -1,3 +1,7 @@
+"""
+ase_sella_vts.tpl.py
+"""
+
 import time
 import os
 import copy
@@ -190,7 +194,7 @@ step0_distances = np.array([np.linalg.norm(step0_geom[bond[0]]
 
 energies = []
 attempt = 0
-fmax = 1.e-4
+fmax = 0.0005
 
 # Detect the initial inter-fragment paramenters (angles and dihedrals if applies)
 ifps: list[list] = get_interfragments_param(mol, scan_coo)
