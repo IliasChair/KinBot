@@ -10,6 +10,7 @@ from ase.calculators.gaussian import Gaussian
 from kinbot.ase_sella_util import get_valid_multiplicity
 
 from aimnet import load_AIMNetMT_ens, load_AIMNetSMD_ens, AIMNetCalculator
+from aimnet2calc import AIMNet2ASE
 from ase.atoms import Atoms
 from ase.vibrations import Vibrations
 from fairchem.core.models.model_registry import model_name_to_local_file
@@ -68,7 +69,9 @@ class Nn_surr(Calculator):
 
     def get_energy_calculator(
         self,
-        calc_type: Literal["AIMNetGas", "AIMNetSMD", "gaussian"] = "gaussian",
+        calc_type: Literal[
+            "AIMNetGas", "AIMNetSMD", "gaussian", "aimnet2", "aimnet2ens"
+        ] = "aimnet2ens",
     ) -> Calculator:
         """
         Returns a calculator optimized for quick energy calculations.
@@ -90,6 +93,11 @@ class Nn_surr(Calculator):
                     calc = AIMNetCalculator(load_AIMNetMT_ens())
                 elif calc_type == "AIMNetSMD":
                     calc = AIMNetCalculator(load_AIMNetSMD_ens())
+                elif calc_type == "aimnet2":
+                    calc = AIMNet2ASE('aimnet2',
+                                      mult=get_valid_multiplicity(self.atoms))
+                elif calc_type == "aimnet2ens":
+                    calc = AIMNet2ASE_ENS()
                 elif calc_type == "gaussian":
                     temp_dir = tempfile.mkdtemp(prefix='gaussian_calc_')
                     calc = Gaussian(
@@ -99,7 +107,8 @@ class Nn_surr(Calculator):
                             mult=get_valid_multiplicity(self.atoms),
                             basis="6-31G(d)", #"6-31G(d)"  # '6-311++g(d,p)',
                             directory=temp_dir,
-                            SCF="XQC,Conver=6,Direct"
+                            SCF="XQC,Conver=6,Direct",
+                            geom="NoCrowd"
                         )
         finally:
             # Re-enable logging after calculator creation
@@ -115,6 +124,7 @@ class Nn_surr(Calculator):
 
         :return: Instance of the force calculator created via OCPCalculator.
         """
+
         get_model = partial(
             model_name_to_local_file, local_cache="/hpcwork/zo122003/BA/models"
         )
@@ -133,9 +143,10 @@ class Nn_surr(Calculator):
             "n8_chkpt": ROOT_PATH / "rundir_small/out/checkpoints/2025-01-28-12-35-28/checkpoint.pt",
             "latest": ROOT_PATH / "rundir_small/out/checkpoints/2025-01-31-23-34-40/checkpoint.pt",
             "8_2": ROOT_PATH / "rundir_small/out/checkpoints/2025-01-22-20-41-52/checkpoint.pt",
+            "12_layers": ROOT_PATH / "rundir_12/out/checkpoints/2025-02-17-16-19-28/best_freq_rmse_checkpoint.pt",
         }
 
-        checkpoint_path = calculators["8_2"]
+        checkpoint_path = calculators["12_layers"]
 
         # Temporarily disable logging to suppress any log messages
         logging.disable(logging.CRITICAL)
@@ -291,7 +302,7 @@ def calculate_vibrational_properties(calculator, work_dir, atoms):
 
     try:
         # Attach the provided calculator to the atoms object.
-        atoms.set_calculator(calculator)
+        atoms.calc = calculator
 
         # Create a prefix for the vibration output files inside work_dir.
         vib_prefix = str(work_dir / "vibration")
@@ -326,22 +337,36 @@ def calculate_vibrational_properties(calculator, work_dir, atoms):
             shutil.rmtree(work_dir)
 
 
-def make_rms_callback(mol: Atoms, threshold_container: list) -> callable:
+def make_rms_callback(
+    mol: Atoms, threshold_container: list, window_size: int = 5
+) -> callable:
     """
     Create stateful RMS displacement callback with proper initialization.
 
+    This callback calculates the running average of RMS displacement over the
+    last N steps and raises an RMSConvergence exception if the average falls
+    below the specified threshold.
+
     :param mol: Target molecule
+    :type mol: ase.atoms.Atoms
     :param threshold_container: Mutable container holding the RMS threshold
+    :type threshold_container: list
+    :param window_size: Number of steps to consider for the running average
+    :type window_size: int
     :return: Configured callback function
+    :rtype: callable
     """
     state = {
         'prev_pos': None,  # Will be initialized on first call
         'initialized': False,
-        'consecutive_below_thresh': 0  # Counter for consecutive steps
+        'window_size': window_size,
+        'rms_history': [float('inf')] * window_size,  # initialize with inf
     }
 
     def check_rms():
-        """Calculate RMS displacement between consecutive steps."""
+        """
+        Calculate running average of RMS displacement over the last N steps.
+        """
         nonlocal state
         current_pos = mol.get_positions()
 
@@ -354,14 +379,17 @@ def make_rms_callback(mol: Atoms, threshold_container: list) -> callable:
         rms = np.sqrt(np.mean((current_pos - state['prev_pos'])**2))
         state['prev_pos'] = current_pos.copy()
 
-        if rms < threshold_container[0]:
-            state['consecutive_below_thresh'] += 1
-            if state['consecutive_below_thresh'] >= 2:
-                raise RMSConvergence(
-                    f"RMS convergence {rms:.5f} Å reached for two consecutive steps."
-                )
-        else:
-            state['consecutive_below_thresh'] = 0  # Reset counter if condition not met
+        state['rms_history'].pop(0)  # Remove oldest RMS
+        state['rms_history'].append(rms) # add newest RMS
+
+        # Calculate running average of RMS
+        running_avg_rms = np.mean(state['rms_history'])
+
+        if running_avg_rms < threshold_container[0]:
+            raise RMSConvergence(
+                f"Running average RMS convergence {running_avg_rms:.5f} "
+                f"Å reached over {state['window_size']} steps."
+            )
 
     return check_rms
 
@@ -370,3 +398,29 @@ def make_rms_callback(mol: Atoms, threshold_container: list) -> callable:
 class RMSConvergence(Exception):
     """Exception raised when geometry converges based on RMS displacement."""
     pass
+
+
+class AIMNet2ASE_ENS(Calculator):
+    implemented_properties: ClassVar[list[str]] = ["energy", "forces"]
+
+    def __init__(self):
+        super().__init__()
+        self.calc1 = AIMNet2ASE(base_calc="aimnet2/aimnet2_wb97m_0.jpt")
+        self.calc2 = AIMNet2ASE(base_calc="aimnet2/aimnet2_wb97m_1.jpt")
+        self.calc3 = AIMNet2ASE(base_calc="aimnet2/aimnet2_wb97m_2.jpt")
+        self.calc4 = AIMNet2ASE(base_calc="aimnet2/aimnet2_wb97m_3.jpt")
+
+    def get_potential_energy(self, atoms):
+        if atoms is not None:
+            self.atoms = atoms
+
+        e1 = self.calc1.get_potential_energy(self.atoms).item()
+        e2 = self.calc2.get_potential_energy(self.atoms).item()
+        e3 = self.calc3.get_potential_energy(self.atoms).item()
+        e4 = self.calc4.get_potential_energy(self.atoms).item()
+        e = (e1 + e2 + e3 + e4) / 4
+        return e
+
+    def get_forces(self, atoms):
+        raise NotImplementedError(
+            ("Forces generated by AIMNet2 are not accurate enough."))
