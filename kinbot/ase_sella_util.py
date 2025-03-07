@@ -147,7 +147,7 @@ def validate_frequencies(freqs: np.ndarray, order: int) -> bool:
 def setup_gaussian_calc(mol: Atoms, BASE_LABEL: str, CALC_DIR: str, mult: Optional[int] = None) -> None:
     """Configure Gaussian calculator for the molecule."""
 
-    calc_params = {{
+    calc_params = {
         "mem": "8GB",
         "nprocshared": 4,
         "method": "wb97xd",
@@ -155,7 +155,7 @@ def setup_gaussian_calc(mol: Atoms, BASE_LABEL: str, CALC_DIR: str, mult: Option
         "chk": f"{BASE_LABEL}_vib.chk",
         "freq": "",
         "extra": "SCF=(XQC, MaxCycle=200)"
-    }}
+    }
     if mult is not None:
         calc_params["mult"] = mult
 
@@ -170,7 +170,9 @@ def calc_vibrations(
     mol = mol.copy()
 
     # Try calculation with default multiplicity
-    setup_gaussian_calc(mol)
+    setup_gaussian_calc(mol=mol,
+                        BASE_LABEL=BASE_LABEL,
+                        CALC_DIR=CALC_DIR)
     dft_energy = None
     try:
         dft_energy = mol.get_potential_energy()
@@ -178,7 +180,10 @@ def calc_vibrations(
         logger.warning(
             "Initial calculation failed, retrying with corrected multiplicity")
         mult = get_valid_multiplicity(mol)
-        setup_gaussian_calc(mol, mult)
+        setup_gaussian_calc(mol=mol,
+                            BASE_LABEL=BASE_LABEL,
+                            CALC_DIR=CALC_DIR,
+                            mult=mult)
         dft_energy = mol.get_potential_energy()
     if dft_energy is None:
         raise RuntimeError(
