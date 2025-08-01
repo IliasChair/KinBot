@@ -1,9 +1,11 @@
+# ruff: noqa: E501
 """
-ASE-Sella optimization template for KinBot.
+ASE-Sella Transition State Optimization Template for KinBot.
 
-This template handles molecular geometry optimization using ASE and Sella,
-with frequency calculations and proper error handling. It supports both
-minimum and transition state optimizations.
+This module performs geometry optimizations targeting transition states using
+ASE and the Sella optimizer. It includes frequency calculations, error
+handling, and integrates results into an ASE database.
+
 
 Template variables:
     {{label}}         - Calculation identifier (may include subdirectory)
@@ -19,20 +21,17 @@ Template variables:
 import os
 import logging
 import traceback
-from typing import Optional
 
 import numpy as np
 from ase import Atoms
 from ase.db import connect
-from ase.calculators.gaussian import Gaussian
 from sella import Sella
 
 from kinbot.constants import EVtoHARTREE
 from kinbot.ase_modules.calculators.{code} import {Code}
-from kinbot.ase_modules.calculators.nn_pes import make_rms_callback, RMSConvergence
-from kinbot.ase_sella_util import get_valid_multiplicity, validate_frequencies
-import cclib
-import subprocess
+from kinbot.ase_modules.calculators.nn_pes import (
+    make_rms_callback, RMSConvergence)
+from kinbot.ase_sella_util import validate_frequencies, calc_vibrations
 
 ATTEMPTS = 3
 
@@ -45,62 +44,9 @@ BASE_LABEL = os.path.basename(LABEL)
 CALC_DIR = os.path.join(os.path.dirname(LABEL) or ".",
                          f"{{BASE_LABEL}}_ts_end_dir")
 
-FMAX = 0.0001  # also try 0.0004
+FMAX = 0.0004 # also try 0.0004
 STEPS = 500
-RMS_THRESH = 0.00005  # RMS displacement threshold (Å)
-
-
-def setup_gaussian_calc(mol: Atoms, mult: Optional[int] = None) -> None:
-    """Configure Gaussian calculator for the molecule."""
-
-    calc_params = {{
-        "mem": "8GB",
-        "nprocshared": 4,
-        "method": "wb97xd",
-        "basis": "6-31G(d)",
-        "chk": f"{{BASE_LABEL}}_vib.chk",
-        "freq": "",
-        "extra": "SCF=(XQC, MaxCycle=200)"
-    }}
-    if mult is not None:
-        calc_params["mult"] = mult
-
-    mol.calc = Gaussian(**calc_params)
-    mol.calc.label = os.path.join(CALC_DIR, f"{{BASE_LABEL}}_vib")
-
-
-# can later be adaped as a drop in for any calculator
-def calc_vibrations(
-        mol: Atoms, logger: logging.Logger
-        ) -> tuple[np.ndarray, float, np.ndarray]:
-    """Calculate vibrational frequencies."""
-    mol = mol.copy()
-
-    # Try calculation with default multiplicity
-    setup_gaussian_calc(mol)
-    dft_energy = None
-    try:
-        dft_energy = mol.get_potential_energy()
-    except RuntimeError:
-        logger.warning(
-            "Initial calculation failed, retrying with corrected multiplicity")
-        mult = get_valid_multiplicity(mol)
-        setup_gaussian_calc(mol, mult)
-        dft_energy = mol.get_potential_energy()
-    if dft_energy is None:
-        raise RuntimeError(
-            "Vibrational frequency calculation failed for {label}")
-
-    # Process frequency results
-    chk_path = os.path.join(CALC_DIR, f"{{BASE_LABEL}}_vib.chk")
-    fchk_path = os.path.join(CALC_DIR, f"{{BASE_LABEL}}_vib.fchk")
-    log_path = os.path.join(CALC_DIR, f"{{BASE_LABEL}}_vib.log")
-    subprocess.run(["formchk", chk_path, fchk_path], check=True)
-
-    fchk_data = cclib.io.ccopen(fchk_path).parse()
-    log_data = cclib.io.ccopen(log_path).parse()
-
-    return fchk_data.vibfreqs, log_data.zpve, fchk_data.hessian, dft_energy
+RMS_THRESH = 0.00002  # RMS displacement threshold (Å)
 
 
 def main():
@@ -128,10 +74,10 @@ def main():
 
     # Use a local copy of FMAX to avoid modifying the global value.
     fmax_loc = FMAX
-    rms_threshold = [RMS_THRESH] # mutable
+    rms_threshold = [RMS_THRESH]  # mutable
     converged_fmax = False
     converged_freqs = False
-    converged_rms = True
+    converged_rms = False
     try:
         # Setup initial calculator
         kwargs = {kwargs}
@@ -179,7 +125,10 @@ def main():
                 logger.info("RMS convergence threshold reached. "
                             "Stopping optimization.")
 
-            freqs, zpe, hessian, dft_energy = calc_vibrations(mol, logger)
+            freqs, zpe, hessian, dft_energy = calc_vibrations(mol,
+                                                              logger,
+                                                              BASE_LABEL,
+                                                              CALC_DIR)
             if validate_frequencies(freqs, order=1):
                 converged_freqs = True
                 error_free_exec = True
@@ -267,6 +216,7 @@ def main():
             f"Status:         {{'SUCCESS ✔' if is_success else 'FAILURE ✘'}}",
             f"Converged(fmax): {{converged_fmax}}",
             f"Converged(freqs): {{converged_freqs}}",
+            f"Converged(rms):  {{converged_rms}}",
             f"Error-free:     {{error_free_exec}}",
             f"order:          1"
         ]

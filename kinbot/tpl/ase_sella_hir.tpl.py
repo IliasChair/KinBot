@@ -22,20 +22,21 @@ Template variables:
 import os
 import logging
 import traceback
-from typing import Optional
 
 import numpy as np
 from ase import Atoms
 from ase.db import connect
-from ase.calculators.gaussian import Gaussian
 from sella import Sella, Constraints
 
 from kinbot.constants import EVtoHARTREE
 from kinbot.ase_modules.calculators.{code} import {Code}
-from kinbot.ase_modules.calculators.nn_pes import make_rms_callback, RMSConvergence
-from kinbot.ase_sella_util import get_valid_multiplicity, validate_frequencies
-import cclib
-import subprocess
+from kinbot.ase_modules.calculators.nn_pes import make_lowest_energy_callback
+from kinbot.ase_modules.calculators.nn_pes import (
+    make_rms_callback, RMSConvergence)
+from kinbot.ase_sella_util import validate_frequencies, calc_vibrations
+
+
+USE_LOW_ENERGY_CONFORMER = True
 
 # Determine the full label and extract the basename. If the provided
 # label includes a directory, BASE_LABEL will be only the final component.
@@ -47,61 +48,8 @@ CALC_DIR = os.path.join(os.path.dirname(LABEL) or ".",
                          f"{{BASE_LABEL}}_hir_dir")
 
 FMAX = 0.001
-STEPS = 500
-RMS_THRESH = 0.00005  # RMS displacement threshold (Å)
-
-
-def setup_gaussian_calc(mol: Atoms, mult: Optional[int] = None) -> None:
-    """Configure Gaussian calculator for the molecule."""
-
-    calc_params = {{
-        "mem": "8GB",
-        "nprocshared": 4,
-        "method": "wb97xd",
-        "basis": "6-31G(d)",
-        "chk": f"{{BASE_LABEL}}_vib.chk",
-        "freq": "",
-        "extra": "SCF=(XQC, MaxCycle=200)"
-    }}
-    if mult is not None:
-        calc_params["mult"] = mult
-
-    mol.calc = Gaussian(**calc_params)
-    mol.calc.label = os.path.join(CALC_DIR, f"{{BASE_LABEL}}_vib")
-
-
-# can later be adaped as a drop in for any calculator
-def calc_vibrations(
-        mol: Atoms, logger: logging.Logger
-        ) -> tuple[np.ndarray, float, np.ndarray]:
-    """Calculate vibrational frequencies."""
-    mol = mol.copy()
-
-    # Try calculation with default multiplicity
-    setup_gaussian_calc(mol)
-    dft_energy = None
-    try:
-        dft_energy = mol.get_potential_energy()
-    except RuntimeError:
-        logger.warning(
-            "Initial calculation failed, retrying with corrected multiplicity")
-        mult = get_valid_multiplicity(mol)
-        setup_gaussian_calc(mol, mult)
-        dft_energy = mol.get_potential_energy()
-    if dft_energy is None:
-        raise RuntimeError(
-            "Vibrational frequency calculation failed for {label}")
-
-    # Process frequency results
-    chk_path = os.path.join(CALC_DIR, f"{{BASE_LABEL}}_vib.chk")
-    fchk_path = os.path.join(CALC_DIR, f"{{BASE_LABEL}}_vib.fchk")
-    log_path = os.path.join(CALC_DIR, f"{{BASE_LABEL}}_vib.log")
-    subprocess.run(["formchk", chk_path, fchk_path], check=True)
-
-    fchk_data = cclib.io.ccopen(fchk_path).parse()
-    log_data = cclib.io.ccopen(log_path).parse()
-
-    return fchk_data.vibfreqs, log_data.zpve, fchk_data.hessian, dft_energy
+STEPS = 300
+RMS_THRESH = 0.00002  # RMS displacement threshold (Å)
 
 
 def main():
@@ -127,7 +75,8 @@ def main():
     logger = logging.getLogger(__name__)
 
     db = connect("{working_dir}/kinbot.db")
-    mol = Atoms(symbols={atom}, positions={geom})
+    mol = Atoms(symbols={atom},
+                 positions={geom})
 
     dft_energy, freqs, zpe, hessian = (None,) * 4
 
@@ -137,10 +86,10 @@ def main():
     const.fix_dihedral(fix_indices)
 
     error_free_exec = False
-    rms_threshold = [RMS_THRESH] # mutable
+    rms_threshold = [RMS_THRESH]  # mutable
     converged_fmax = False
     converged_freqs = False
-    converged_rms = True
+    converged_rms = False
     try:
         # Setup initial calculator
         kwargs = {kwargs}
@@ -176,6 +125,15 @@ def main():
         # Attach RMS callback to check every step
         opt.attach(make_rms_callback(mol, rms_threshold), interval=1)
 
+        if USE_LOW_ENERGY_CONFORMER:
+            lowest_energy_info = {{'min_energy': np.inf,
+                                  'min_energy_mol': mol.copy(),
+                                  'step': 0}}
+            opt.attach(make_lowest_energy_callback(
+                mol, lowest_energy_info), interval=1)
+        else:
+            lowest_energy_info = None
+
         try:
             converged_fmax = opt.run(fmax=FMAX, steps=STEPS)
         except RMSConvergence:
@@ -183,7 +141,19 @@ def main():
             logger.info("RMS convergence threshold reached. "
                         "Stopping optimization.")
 
-        freqs, zpe, hessian, dft_energy = calc_vibrations(mol, logger)
+        if (not converged_fmax) and (not converged_rms) \
+            and USE_LOW_ENERGY_CONFORMER:
+            if lowest_energy_info['min_energy_mol'] is not None:
+                logging.info(
+                    ("Using lowest energy conf instead of latest conf. "
+                    f"step: {{lowest_energy_info['step']}}, "
+                    f"min_energy: {{lowest_energy_info['min_energy']}}eV"))
+                mol = lowest_energy_info['min_energy_mol']
+
+        freqs, zpe, hessian, dft_energy = calc_vibrations(mol,
+                                                          logger,
+                                                          BASE_LABEL,
+                                                          CALC_DIR)
         if validate_frequencies(freqs, {order}):
             converged_freqs = True
             error_free_exec = True
@@ -246,6 +216,7 @@ def main():
             f"Status:         {{'SUCCESS ✔' if is_success else 'FAILURE ✘'}}",
             f"Converged(fmax): {{converged_fmax}}",
             f"Converged(freqs): {{converged_freqs}}",
+            f"Converged(rms):  {{converged_rms}}",
             f"Error-free:     {{error_free_exec}}",
             f"order:          {order}"
         ]

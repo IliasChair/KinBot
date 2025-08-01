@@ -1,3 +1,7 @@
+"""
+ase_sella_ring_conf.tpl.py
+"""
+
 import os
 import sys
 import shutil
@@ -7,21 +11,22 @@ from ase import Atoms
 from ase.db import connect
 from sella import Sella, Constraints
 
-from kinbot.ase_modules.calculators.{code} import {Code}
+from kinbot.ase_modules.calculators.nn_pes import Nn_surr
 from kinbot.stationary_pt import StationaryPoint
 from kinbot.constants import EVtoHARTREE
 
-
+FMAX = 0.0004
+STEPS = 200
 
 db = connect('{working_dir}/kinbot.db')
 mol = Atoms(symbols={atom},
             positions={geom})
 
 kwargs = {kwargs}
-mol.calc = {Code}(**kwargs)
-if '{Code}' == 'Gaussian':
-    mol.get_potential_energy()  # what was this used for?
-    mol.calc = {Code}(**kwargs)
+mol.calc = Nn_surr(kwargs)
+# if '{Code}' == 'Gaussian':
+#     mol.get_potential_energy()  # what was this used for?
+#     mol.calc = {Code}(**kwargs)
 
 const = Constraints(mol)
 fix_these = [[idx - 1 for idx in fix] for fix in {fix}]
@@ -50,7 +55,7 @@ opt = Sella(mol,
 
 try:
     mol.calc.label = '{label}'
-    opt.run(fmax=1e-4, steps=500)
+    opt.run(fmax=FMAX, steps=STEPS)
     e = mol.get_potential_energy("gaussian") * EVtoHARTREE
     db.write(mol, name='{label}',
              data={{'energy': e, 'status': 'normal'}})
