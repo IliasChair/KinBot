@@ -104,7 +104,7 @@ class QuantumChemistry:
             if ts:
                 # arguments for transition state searches
                 kwargs['method'] = 'wb97xd' #  'am1' #'wb97xd'
-                kwargs['basis'] = '6-31G(d)' #'' # '6-31G(d)'
+                kwargs['basis'] = 'def2tzvp' #'' # '6-31G(d)'
 
                 if step == 0:
                     if not self.par['bimol']:
