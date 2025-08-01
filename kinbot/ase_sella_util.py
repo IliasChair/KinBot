@@ -151,10 +151,9 @@ def setup_gaussian_calc(mol: Atoms, BASE_LABEL: str, CALC_DIR: str, mult: Option
         "mem": "8GB",
         "nprocshared": 4,
         "method": "wb97xd",
-        "basis": "6-31G(d)",
+        "basis": "def2tzvp",
         "chk": f"{BASE_LABEL}_vib.chk",
-        "freq": "",
-        "extra": "SCF=(XQC, MaxCycle=200)"
+        "extra": "freq=noraman scf=(tight, xqc) int=ultrafine guess=mix geom=nocrowd",
     }
     if mult is not None:
         calc_params["mult"] = mult
