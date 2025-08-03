@@ -997,7 +997,7 @@ class QuantumChemistry:
                 prev_geom = geom  # saves the previous 
             mol = row.toatoms()
             geom = mol.positions
-            atoms = np.array(list(mol.symbols.get_chemical_formula('all')))
+            atoms = mol.symbols
             found_entry = 1
 
         if found_entry and previous == 0:
@@ -1080,7 +1080,7 @@ class QuantumChemistry:
 
         # Get last entry
         *_, last_row = self.db.select(name=job)
-        if hasattr(last_row, 'data'):
+        if hasattr(last_row, 'data') and 'energy' in last_row.data:
             energy = last_row.data.get('energy')
         else:
             logger.warning(f'No energy found in the database for {job}. '
