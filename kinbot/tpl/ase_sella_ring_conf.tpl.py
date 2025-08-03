@@ -15,7 +15,7 @@ from kinbot.ase_modules.calculators.nn_pes import Nn_surr
 from kinbot.stationary_pt import StationaryPoint
 from kinbot.constants import EVtoHARTREE
 
-FMAX = 0.0004
+FMAX = 0.0001
 STEPS = 200
 
 db = connect('{working_dir}/kinbot.db')

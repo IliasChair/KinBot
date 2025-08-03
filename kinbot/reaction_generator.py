@@ -110,7 +110,7 @@ class ReactionGenerator:
                                 self.species.reac_ts_done[index] = -999
                             elif status == 0:
                                 self.species.reac_ts_done[index] = 1
-                            elif status == -1: 
+                            elif status == -1:
                                 logger.info(f'\tReaction search failed for {obj.instance_name}.')
                                 self.species.reac_ts_done[index] = -999
                         else:
@@ -122,7 +122,7 @@ class ReactionGenerator:
                                 logger.info(f'\tReaction search failed for {obj.instance_name}: '
                                             'Invalid geometry.')
 
-                    elif obj.scan == 1:  # do a bond scan 
+                    elif obj.scan == 1:  # do a bond scan
 
                         if (self.species.reac_step[index] == self.par['scan_step'] + 1):
                             status, freq = self.qc.get_qc_freq(obj.instance_name, self.species.natom)
@@ -138,7 +138,7 @@ class ReactionGenerator:
                                 logger.info(f'\tRxn search using scan failed for {obj.instance_name} '
                                             'in TS optimization stage.')
                                 self.species.reac_ts_done[index] = -999
-                        else:  
+                        else:
                             # First point of the scan
                             if self.species.reac_step[index] == 0:
                                 command = self.par['qc_command']
@@ -167,7 +167,7 @@ class ReactionGenerator:
                                             ediff = np.diff(self.species.reac_scan_energy[index])
                                             if ediff[-1] < 0 and ediff[-2] > 0:  # max
                                                 logger.info(f'\tMaximum found for {obj.instance_name}.')
-                                                e_in_kcal = [constants.AUtoKCAL * (self.species.reac_scan_energy[index][ii] - 
+                                                e_in_kcal = [constants.AUtoKCAL * (self.species.reac_scan_energy[index][ii] -
                                                                self.species.reac_scan_energy[index][0])
                                                                for ii in range(len(self.species.reac_scan_energy[index]))]
                                                 e_in_kcal = np.round(e_in_kcal, 2)
@@ -184,7 +184,7 @@ class ReactionGenerator:
                                                     logger.info(f'\tRelative energies (kcal/mol): {self.species.reac_scan_energy[index]}')
                                                     logger.debug(f'Derivatives: {ediff}')
                                                     self.species.reac_step[index] = self.par['scan_step']  # ending the scan
-                                     
+
                                         # scan continues, and if reached scan_step, then goes for full optimization
                                         self.species.reac_step[index] = reac_family.carry_out_reaction(
                                                                         obj, self.species.reac_step[index], command,
@@ -241,7 +241,7 @@ class ReactionGenerator:
                                          .format(barrier, obj.instance_name))
                             self.species.reac_ts_done[index] = -999
                         else:
-                            obj.irc = IRC(obj, self.par)  
+                            obj.irc = IRC(obj, self.par)
                             irc_status = obj.irc.check_irc()
                             if 0 in irc_status:
                                 logger.info('\tRxn barrier is ({0:.2f} kcal/mol) at L1 for {1}'
@@ -268,7 +268,7 @@ class ReactionGenerator:
                 elif self.species.reac_ts_done[index] == 2:
                     # obj.valid_prod: list marking fragments for deletion (if breaks apart or changes)
                     # frag_unique: list of unique fragments across all reactions for this well
-                    # obj.products: list of products for given reaction, which includes changes and further dissociation 
+                    # obj.products: list of products for given reaction, which includes changes and further dissociation
                     if obj.prod_done == 0:  # not started optimization yet
                         # identify bimolecular products and wells from IRC - do it once
                         obj.products, _ = obj.irc_prod.start_multi_molecular(vary_charge=True)
@@ -294,12 +294,12 @@ class ReactionGenerator:
 
                     # initial fragment calculations finished, reading results...
                     hom_sci_energy = 0
-                    products_orig = [copy.copy(opr) for opr in obj.products] 
+                    products_orig = [copy.copy(opr) for opr in obj.products]
                     ndone = 0
                     for fragii, frag in enumerate(products_orig):
                         if frag.chemid == self.species.chemid:
                             logger.info(f'Product in {obj.instance_name} is identical to the reactant. Reaction deleted.')
-                            self.species.reac_ts_done[index] = -999 
+                            self.species.reac_ts_done[index] = -999
                             break
                         # do not look at already invalid fragments again
                         elif not obj.valid_prod[fragii]:
@@ -320,7 +320,7 @@ class ReactionGenerator:
                             ndone += 1
                             _, frag.energy = self.qc.get_qc_energy(str(frag.chemid) + '_well')
                             _, frag.zpe = self.qc.get_qc_zpe(str(frag.chemid) + '_well')
-                            if self.species.reac_type[index] == 'hom_sci': # TODO energy is the sum of all possible fragments  
+                            if self.species.reac_type[index] == 'hom_sci': # TODO energy is the sum of all possible fragments
                                 hom_sci_energy += frag.energy + frag.zpe
                             # Reinitialize rads and bonds
                             frag.reset_order()
@@ -329,7 +329,7 @@ class ReactionGenerator:
                                 for fri, fr in enumerate(obj.products):
                                     if fr.chemid == chemid_orig:
                                         obj.valid_prod[fri] = False
-                                newfrags, _ = frag.start_multi_molecular(vary_charge=True)  
+                                newfrags, _ = frag.start_multi_molecular(vary_charge=True)
                                 self.equate_identical(newfrags)
                                 self.equate_unique(newfrags, frag_unique)
                                 logger.warning(f'Product {chemid_orig} optimized to {[nf.chemid for nf in newfrags]} '
@@ -391,9 +391,9 @@ class ReactionGenerator:
                             e, obj.irc_prod.energy = self.qc.get_qc_energy(f'{obj.irc_prod.name}')  # e is the error code: should be 0 (success) at this point.
                             e, obj.irc_prod.zpe = self.qc.get_qc_zpe(f'{obj.irc_prod.name}')
                             e, obj.irc_prod.geom = self.qc.get_qc_geom(obj.irc_prod.name, obj.irc_prod.natom)
-                            e, obj.irc_prod.freq = self.qc.get_qc_freq(obj.irc_prod.name, obj.irc_prod.natom) 
+                            e, obj.irc_prod.freq = self.qc.get_qc_freq(obj.irc_prod.name, obj.irc_prod.natom)
                             for this_frag in obj.irc_fragments:
-                                e, this_frag.freq = self.qc.get_qc_freq(f'{this_frag.name}_well', this_frag.natom) 
+                                e, this_frag.freq = self.qc.get_qc_freq(f'{this_frag.name}_well', this_frag.natom)
                             fragments_energies = sum([(this_frag.energy + this_frag.zpe) for this_frag in obj.irc_fragments ])
                             obj.vdW_depth = (fragments_energies - (obj.irc_prod.energy + obj.irc_prod.zpe)) * constants.AUtoKCAL
                             if obj.vdW_depth > self.par['vdW_detection']:
@@ -401,7 +401,7 @@ class ReactionGenerator:
                                 obj.do_vdW = True
                             else:
                                 logger.info(f'\t{obj.irc_prod.name} was not succesfully identified as a vdW well. Well depth is {np.round(obj.vdW_depth, 2)} kcal/mol.')
-                            
+
                         if self.species.reac_type[index] == 'hom_sci': # TODO energy is the sum of all possible fragments
                             hom_sci_energy = (prods_energy - self.species.start_energy - self.species.start_zpe) * constants.AUtoKCAL
                             if hom_sci_energy < self.par['barrier_threshold'] + self.par['hom_sci_threshold_add']:
@@ -442,7 +442,7 @@ class ReactionGenerator:
                         ts.bond_mx()
                         ts.bond = np.maximum(ts.bond, bond_mx)
                         # -1: broken, 0: no change, +1: formed
-                        ts.reac_bond = np.array(obj.irc_prod.bond01) - np.array(self.species.bond01) 
+                        ts.reac_bond = np.array(obj.irc_prod.bond01) - np.array(self.species.bond01)
                         ts.find_cycle()
                         ts.find_conf_dihedral()
                         obj.ts = ts
@@ -458,12 +458,12 @@ class ReactionGenerator:
                         # do the high level optimization if requested
                         obj.irc_prod_opt = Optimize(obj.irc_prod, self.par, self.qc, just_high=True)
                         obj.irc_prod_opt.do_optimization()
-                        if obj.irc_prod_opt.shigh == -999: 
+                        if obj.irc_prod_opt.shigh == -999:
                             logger.info('\tVdW search failed for {}, prod_opt shigh fail for {}.'
                                             .format(obj.irc_prod.name, obj.irc_prod.chemid))
                             obj.do_vdW = False
                         # non-conformationally optimized fragments high-level qc to be added here if we want to
-                                                  
+
                     # do the products optimizations
                     temp_prod_opt = []  # holding the optimization objects temporarily
                     for st_pt in obj.products:
@@ -535,7 +535,7 @@ class ReactionGenerator:
                             logger.warning('Reaction {} pr_opt_shigh failure'.format(obj.instance_name))
                             fails = 1
                         continue
-                            
+
                     if fails:
                         self.species.reac_ts_done[index] = -999
                     elif opts_done:
@@ -561,13 +561,13 @@ class ReactionGenerator:
                             st_pt = obj.prod_opt[0].species
                             chemid = st_pt.chemid
                             # if high level was requested, it is L2, otherwise L1
-                            rel_en = (st_pt.energy + st_pt.zpe - self.species.energy - self.species.zpe) * constants.AUtoKCAL 
+                            rel_en = (st_pt.energy + st_pt.zpe - self.species.energy - self.species.zpe) * constants.AUtoKCAL
                             logger.info(f'\tProduct {obj.instance_name} energy is {np.round(rel_en, 2)} kcal/mol.')
                             if self.par['barrier_threshold_L2'] and self.par['high_level']:
                                 new_barrier_threshold = None
-                                new_barrier_threshold_L2 = self.par['barrier_threshold_L2'] - rel_en 
+                                new_barrier_threshold_L2 = self.par['barrier_threshold_L2'] - rel_en
                             else:
-                                new_barrier_threshold = self.par['barrier_threshold'] - rel_en 
+                                new_barrier_threshold = self.par['barrier_threshold'] - rel_en
                                 new_barrier_threshold_L2 = None
                             dirwell = os.path.dirname(os.getcwd())
                             jobs = open(dirwell + '/chemids', 'r').read().split('\n')
@@ -603,7 +603,7 @@ class ReactionGenerator:
                         logger.warning(obj.ts.reduced_freqs)
                         self.species.reac_ts_done[index] = -999
                         neg_freq = 1
-                        
+
                     if not neg_freq:
                         # the reaction search is finished
                         self.species.reac_ts_done[index] = -1  # this is the success code
@@ -638,13 +638,13 @@ class ReactionGenerator:
                         prodstring = []
                         for pp in self.species.reac_obj[index].products:
                             prodstring.append(str(pp.chemid))
-                        f_out.write('{}\t{}\t{}\t{}\n'.format(self.species.reac_ts_done[index], 
-                                                              self.species.reac_step[index], 
+                        f_out.write('{}\t{}\t{}\t{}\n'.format(self.species.reac_ts_done[index],
+                                                              self.species.reac_step[index],
                                                               self.species.reac_obj[index].instance_name,
                                                               ' '.join(prodstring)))
                     else:
-                        f_out.write('{}\t{}\t{}\n'.format(self.species.reac_ts_done[index], 
-                                                          self.species.reac_step[index], 
+                        f_out.write('{}\t{}\t{}\n'.format(self.species.reac_ts_done[index],
+                                                          self.species.reac_step[index],
                                                           self.species.reac_obj[index].instance_name))
             time.sleep(1)
 
@@ -778,7 +778,7 @@ class ReactionGenerator:
                 frag_unique.append(frag)
             elif len(frag_unique) > 0:
                 new = 1
-                for fragu in frag_unique:  
+                for fragu in frag_unique:
                     if frag.chemid == fragu.chemid:
                         fragments[fi] = fragu
                         new = 0

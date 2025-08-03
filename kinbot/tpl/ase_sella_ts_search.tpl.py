@@ -10,7 +10,7 @@ from sella import Sella, Constraints
 from kinbot.ase_modules.calculators.nn_pes import Nn_surr
 from kinbot.constants import EVtoHARTREE
 
-FMAX = 0.05
+FMAX = 0.1 # sella originally used 0.1
 STEPS = 300
 
 db = connect('{working_dir}/kinbot.db')

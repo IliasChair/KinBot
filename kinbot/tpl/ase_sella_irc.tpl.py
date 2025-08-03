@@ -46,7 +46,7 @@ CALC_DIR = os.path.join(os.path.dirname(LABEL) or ".",
 FMAXIRC = 0.01    # IRC convergence threshold (suggested: 0.01 or 0.0004)
 STEPSIRC = 300
 
-FMAXOPT = 0.0004
+FMAXOPT = 0.0001
 STEPSOPT = 300
 RMS_THRESHOPT = 0.00002  # RMS displacement threshold (Å)
 

@@ -45,7 +45,7 @@ BASE_LABEL = os.path.basename(LABEL)
 CALC_DIR = os.path.join(os.path.dirname(LABEL) or ".",
                          f"{{BASE_LABEL}}_dir")
 
-FMAX = 0.0004  # also try 0.0004
+FMAX = 0.0001  # also try 0.0004
 STEPS = 500
 RMS_THRESH = 0.00001  # RMS displacement threshold (Å)
 

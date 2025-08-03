@@ -194,7 +194,7 @@ step0_distances = np.array([np.linalg.norm(step0_geom[bond[0]]
 
 energies = []
 attempt = 0
-fmax = 0.0005
+fmax = 0.0001
 
 # Detect the initial inter-fragment paramenters (angles and dihedrals if applies)
 ifps: list[list] = get_interfragments_param(mol, scan_coo)
