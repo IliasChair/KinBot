@@ -66,10 +66,8 @@ class Nn_surr(Calculator):
         else:
             self.energy_calculator_name = energy_calculator_name
 
-        logging.info("Using energy calculator name: "
-                     f"{self.energy_calculator_name}")
-        logging.info("Using force calculator name: "
-                     f"{self.force_calculator_name}")
+        print(f"Using energy calculator name: {self.energy_calculator_name}")
+        print(f"Using force calculator name: {self.force_calculator_name}")
 
         self._energy_calculator = None
         self._force_calculator = None
@@ -78,6 +76,8 @@ class Nn_surr(Calculator):
             self.unit = "hartree"
         else:
             self.unit = "ev"
+
+        self.label = "no_label"
 
     @property
     def energy_calculator(self):
@@ -285,6 +285,34 @@ class Nn_surr(Calculator):
             )
             return self._get_energy_from_calculator(use_force_fallback=True)
 
+    def get_potential_energy_dft(
+        self, mol, label, **kwargs
+    ) -> float:
+        """
+        Drop in replacement for potential energy calculations in kinbot
+        workflow
+
+        :param kwargs: Keyword arguments for the Gaussian calculator.
+        :return: The potential energy in the unit set for the calculator.
+        """
+
+        copy_from_mol = mol.copy()
+        copy_from_mol.calc = Gaussian(
+                    method="wb97x",
+                    basis="6-31G(d)",
+                    label=label + "_dft_energy",
+                    extra="scf=(tight, xqc) int=ultrafine guess=mix",
+                    nprocshared=4,
+                    mult=get_valid_multiplicity(mol),
+                    force="",  # Crucial for Sella
+                    mem="12GB",
+                )
+        copy_from_mol.calc.label = label + "_dft_energy"
+
+        return copy_from_mol.get_potential_energy()
+
+
+
 
     def get_forces(self, atoms=None):
         if atoms is not None:
@@ -393,51 +421,6 @@ def calculate_vibrational_properties(calculator, work_dir, atoms):
         # If a random temporary directory was created, remove it.
         if temporary_dir_created:
             shutil.rmtree(work_dir)
-
-
-def make_lowest_energy_callback(mol, energy_container):
-    """
-    Create stateful callback that tracks the lowest energy conformer.
-
-    This callback updates a mutable dictionary with the lowest energy
-    found and corresponding Atoms object.
-
-    This is used to help combat divergence issues. If we hit max steps during
-    optimization, we either:
-    1. Did not allow for enough steps and slow convergence.
-    2. The optimization is diverging.
-
-    In the former case, the lowest energy conformer will simply be the
-    structure from the latest iteration. In the latter case, the most optimal
-    structure will be the one from the previous iterations.
-
-    In either case we can use the lowest energy structure from a previous
-    iteration as a starting point for the next round of optimization and try
-    again.
-
-    :param mol: Target molecule.
-    :type mol: ase.atoms.Atoms
-    :param energy_container: Mutable dictionary to store lowest energy and
-                             corresponding Atoms object.
-    :return: Configured callback function.
-    :rtype: callable
-    """
-    def callback():
-        """
-        Evaluate current energy and update lowest energy container if
-        improved.
-        """
-        energy_container["step"] += 1
-        try:
-            current_energy = mol.get_potential_energy()
-            if current_energy < energy_container.get('min_energy', np.inf):
-                energy_container['min_energy'] = current_energy
-                energy_container['positions'] = mol.get_positions().copy()
-        except Exception as e:
-            logging.error("Lowest energy callback error: %s", e)
-        return
-    return callback
-
 
 def make_rms_callback(
     mol: Atoms, threshold_container: list, window_size: int = 5

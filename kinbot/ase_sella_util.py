@@ -7,6 +7,7 @@ import os
 import logging
 import subprocess
 import cclib
+from sella import Sella
 
 
 def get_valid_multiplicity(atoms: Atoms, default_mult: int = 1) -> int:
@@ -163,7 +164,7 @@ def setup_gaussian_calc(mol: Atoms, BASE_LABEL: str, CALC_DIR: str, mult: Option
 
 
 def calc_vibrations(
-        mol: Atoms, logger: logging.Logger, BASE_LABEL: str, CALC_DIR: str
+        mol: Atoms, BASE_LABEL: str, CALC_DIR: str
         ) -> tuple[np.ndarray, float, np.ndarray, float]:
     """Calculate vibrational frequencies."""
     mol = mol.copy()
@@ -176,7 +177,7 @@ def calc_vibrations(
     try:
         dft_energy = mol.get_potential_energy()
     except RuntimeError:
-        logger.warning(
+        print(
             "Initial calculation failed, retrying with corrected multiplicity")
         mult = get_valid_multiplicity(mol)
         setup_gaussian_calc(mol=mol,
@@ -186,7 +187,7 @@ def calc_vibrations(
         dft_energy = mol.get_potential_energy()
     if dft_energy is None:
         raise RuntimeError(
-            "Vibrational frequency calculation failed for {label}")
+            f"Vibrational frequency calculation failed for {BASE_LABEL}")
 
     # Process frequency results
     chk_path = os.path.join(CALC_DIR, f"{BASE_LABEL}_vib.chk")
@@ -198,3 +199,95 @@ def calc_vibrations(
     log_data = cclib.io.ccopen(log_path).parse()
 
     return fchk_data.vibfreqs, log_data.zpve, fchk_data.hessian, dft_energy
+
+
+def make_lowest_energy_callback(mol, energy_container):
+    """
+    Create stateful callback that tracks the lowest energy conformer.
+
+    This callback updates a mutable dictionary with the lowest energy
+    found and corresponding Atoms object.
+
+    This is used to help combat divergence issues. If we hit max steps during
+    optimization, we either:
+    1. Did not allow for enough steps and slow convergence.
+    2. The optimization is diverging.
+
+    In the former case, the lowest energy conformer will simply be the
+    structure from the latest iteration. In the latter case, the most optimal
+    structure will be the one from the previous iterations.
+
+    In either case we can use the lowest energy structure from a previous
+    iteration as a starting point for the next round of optimization and try
+    again.
+
+    :param mol: Target molecule.
+    :type mol: ase.atoms.Atoms
+    :param energy_container: Mutable dictionary to store lowest energy and
+                             corresponding Atoms object.
+    :return: Configured callback function.
+    :rtype: callable
+    """
+    def callback():
+        """
+        Evaluate current energy and update lowest energy container if
+        improved.
+        """
+        energy_container["step"] += 1
+        try:
+            current_energy = mol.get_potential_energy()
+            if current_energy < energy_container.get('min_energy', np.inf):
+                energy_container['min_energy'] = current_energy
+                energy_container['positions'] = mol.get_positions().copy()
+        except Exception as e:
+            logging.error("Lowest energy callback error: %s", e)
+        return
+    return callback
+
+class SellaWrapper:
+    """A wrapper for the Sella optimizer to handle lowest energy conformers."""
+    def __init__(self, atoms, use_low_energy_conformer=False, **kwargs):
+        """
+        Initializes the SellaWrapper.
+        :param atoms: The ASE Atoms object to be optimized.
+        :param use_low_energy_conformer: If True, track and use the lowest
+                                         energy conformer found during
+                                         optimization.
+        :param kwargs: Keyword arguments to be passed to the Sella optimizer.
+        """
+        self.atoms = atoms
+        self.use_low_energy_conformer = use_low_energy_conformer
+        self.optimizer = Sella(atoms, **kwargs)
+        self.lowest_energy_info = None
+
+        if self.use_low_energy_conformer:
+            self.lowest_energy_info = {
+                'min_energy': np.inf,
+                'positions': self.atoms.get_positions().copy(),
+                'step': 0
+            }
+            self.optimizer.attach(
+                make_lowest_energy_callback(self.atoms, self.lowest_energy_info),
+                interval=1
+            )
+
+    def run(self, *args, **kwargs):
+        """
+        Run the optimization.
+        :param args: Positional arguments for Sella's run method.
+        :param kwargs: Keyword arguments for Sella's run method.
+        :return: The convergence status from the Sella optimizer.
+        """
+        converged = self.optimizer.run(*args, **kwargs)
+
+        if self.use_low_energy_conformer:
+            # After optimization, set the atoms' positions to the lowest
+            # energy conformer found.
+            self.atoms.set_positions(self.lowest_energy_info['positions'])
+            logging.info(
+                "Using lowest energy conformer from step "
+                f"{self.lowest_energy_info['step']} with energy "
+                f"{self.lowest_energy_info['min_energy']:.6f} eV"
+            )
+
+        return converged
