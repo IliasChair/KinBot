@@ -151,7 +151,7 @@ def setup_gaussian_calc(mol: Atoms, BASE_LABEL: str, CALC_DIR: str, mult: Option
         "mem": "8GB",
         "nprocshared": 4,
         "method": "wb97xd",
-        "basis": "def2tzvp",
+        "basis": "def2tzvpp",
         "chk": f"{BASE_LABEL}_vib.chk",
         "extra": "freq=noraman scf=(tight, xqc) int=ultrafine guess=mix geom=nocrowd",
     }

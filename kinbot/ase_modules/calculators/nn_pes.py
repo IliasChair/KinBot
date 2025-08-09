@@ -66,10 +66,8 @@ class Nn_surr(Calculator):
         else:
             self.energy_calculator_name = energy_calculator_name
 
-        logging.info("Using energy calculator name: "
-                     f"{self.energy_calculator_name}")
-        logging.info("Using force calculator name: "
-                     f"{self.force_calculator_name}")
+        print(f"Using energy calculator name: {self.energy_calculator_name}")
+        print(f"Using force calculator name: {self.force_calculator_name}")
 
         self._energy_calculator = None
         self._force_calculator = None
@@ -469,6 +467,10 @@ def make_rms_callback(
     def check_rms():
         """
         Calculate running average of RMS displacement over the last N steps.
+
+        Checking the rmsd using the Kabsch algorithm alone is sufficient since
+        geometries dont change much with each step. So no reordering of atoms
+        using the hungarian algorithm is needed here.
         """
         nonlocal state
         current_pos = mol.get_positions()
