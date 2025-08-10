@@ -78,7 +78,7 @@ class cost_function():
                 grad[3 * j + 2] += 2 * ((dc - d) * weight) * 2 * (x[3 * i + 2] - x[3 * j + 2]) * -1
 
         return grad
-    
+
     def hessian(self, atoms):
         x = np.reshape(atoms.positions, 3 * len(atoms.positions))
         hess = np.zeros((len(x),len(x)))
@@ -101,7 +101,7 @@ def append_geom(natom, step, new_e, atom, x_new, grad, atoms_list, f_out=None):
 
     atoms = Atoms(symbols=atom, positions=np.reshape(x_new, (natom, 3)))
     calc = SinglePointCalculator(atoms, energy=new_e, forces=10. * np.reshape(grad, (natom, 3)))
-    atoms.set_calculator(calc)
+    atoms.calc(calc)
     atoms_list.append(atoms)
     return step
 
@@ -293,7 +293,7 @@ def control_changes(species, name, geom, new_geom, changes, bond):
                 try:
                     minb = constants.st_bond[''.join(sorted([species.atom[i], species.atom[j]]))]
                 except KeyError:
-                    minb = 1.2 * (covalent_radii[atomic_numbers[species.atom[i]]] 
+                    minb = 1.2 * (covalent_radii[atomic_numbers[species.atom[i]]]
                                   + covalent_radii[atomic_numbers[species.atom[j]]])
 
                 if dist < minb:
@@ -360,7 +360,7 @@ def get_coords(species, bond, geom, changes, mode):
                     try:
                         d_min = (constants.st_bond[''.join(sorted([atom[i], atom[j]]))] * 1.2) ** 2
                     except KeyError:
-                        d_min = (1.44 * (covalent_radii[atomic_numbers[atom[i]]] 
+                        d_min = (1.44 * (covalent_radii[atomic_numbers[atom[i]]]
                                          + covalent_radii[atomic_numbers[atom[j]]])) ** 2
                     if np.sqrt(d) < 4.:  # use a cutoff of 4 angstroms
                         if bond[i][j] > 0:
