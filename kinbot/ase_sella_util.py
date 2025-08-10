@@ -172,19 +172,13 @@ def calc_vibrations(
     # Try calculation with default multiplicity
     setup_gaussian_calc(mol=mol,
                         BASE_LABEL=BASE_LABEL,
-                        CALC_DIR=CALC_DIR)
+                        CALC_DIR=CALC_DIR,
+                        mult=get_valid_multiplicity(mol))
     dft_energy = None
     try:
         dft_energy = mol.get_potential_energy()
-    except RuntimeError:
-        print(
-            "Initial calculation failed, retrying with corrected multiplicity")
-        mult = get_valid_multiplicity(mol)
-        setup_gaussian_calc(mol=mol,
-                            BASE_LABEL=BASE_LABEL,
-                            CALC_DIR=CALC_DIR,
-                            mult=mult)
-        dft_energy = mol.get_potential_energy()
+    except Exception as error:
+        print(f"Initial calculation failed: {error}")
     if dft_energy is None:
         raise RuntimeError(
             f"Vibrational frequency calculation failed for {BASE_LABEL}")
