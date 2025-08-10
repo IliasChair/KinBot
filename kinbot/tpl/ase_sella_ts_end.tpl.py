@@ -68,7 +68,7 @@ try:
         raise RuntimeError
 except (RuntimeError, ValueError):
     data = {{'status': 'error'}}
-    if freqs:
+    if freqs is not None and np.size(freqs) > 0:
         data['frequencies'] = freqs
     db.write(mol, name='{label}', data=data)
 
