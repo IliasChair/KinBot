@@ -1,26 +1,25 @@
+"ase_sella_irc.tpl.py"
 import os
 
 from ase import Atoms
 from ase.db import connect
 
 from sella import Sella, IRC
-
+from kinbot.ase_modules.calculators.nn_pes import Nn_surr
 from kinbot.ase_modules.calculators.{code} import {Code}
 
 db = connect('{working_dir}/kinbot.db')
-mol = Atoms(symbols={atom}, 
+mol = Atoms(symbols={atom},
             positions={geom})
 
 kwargs = {kwargs}
-mol.calc = {Code}(**kwargs)
-if '{Code}' == 'Gaussian':
-    mol.get_potential_energy()
-    kwargs['guess'] = 'Read'
-    mol.calc = {Code}(**kwargs)
+if "label" not in kwargs:
+    kwargs["label"] = "{label}"
+mol.calc = Nn_surr()
 
 if os.path.isfile('{label}_sella.log'):
     os.remove('{label}_sella.log')
-irc = IRC(mol, trajectory='{label}.traj', dx=0.1, eta=1e-4, gamma=0, 
+irc = IRC(mol, trajectory='{label}.traj', dx=0.1, eta=1e-4, gamma=0,
           logfile='{label}_sella.log')
 if '{label}'.endswith('F'):
     direction = 'forward'
@@ -31,7 +30,9 @@ else:
 try:
     converged_irc = irc.run(fmax=0.01, steps=100, direction=direction)
     if converged_irc:
+        #e = mol.calc.get_potential_energy_dft(mol, **kwargs)
         e = mol.get_potential_energy()
+        print(f"IRC converged for {label} with energy {{e}}")
         db.write(mol, name='{label}', data={{'energy': e, 'status': 'normal'}})
         success = True
     elif mol.positions is not None and mol.positions.any():
@@ -54,28 +55,28 @@ with open('{label}.log', 'a') as f:
 
 if success:
     prod_kwargs = {prod_kwargs}
-    mol.calc = {Code}(**prod_kwargs)
-    if '{Code}' == 'Gaussian':
-        mol.get_potential_energy()
-        kwargs['guess'] = 'Read'
-        mol.calc = {Code}(**prod_kwargs)
+    if "label" not in prod_kwargs:
+        prod_kwargs["label"] = "{label}_prod"
+    mol.calc = Nn_surr()
     sella_kwargs = {sella_kwargs}
-    opt = Sella(mol, 
-                order=0, 
-                trajectory='{label}_prod.traj', 
+    opt = Sella(mol,
+                order=0,
+                trajectory='{label}_prod.traj',
                 logfile='{label}_prod_sella.log',
                 **sella_kwargs)
     try:
         converged_opt = opt.run(fmax=0.0001, steps=300)
         if converged_opt:
+            #e = mol.calc.get_potential_energy_dft(mol, **prod_kwargs)
             e = mol.get_potential_energy()
-            db.write(mol, name='{label}_prod', 
+            print(f"post IRC optimization converged for {label}_prod with energy {{e}}")
+            db.write(mol, name='{label}_prod',
                      data={{'energy': e, 'status': 'normal'}})
         else:
             raise RuntimeError
     except (RuntimeError, ValueError):
-        db.write(mol, name='{label}_prod', data={{'status': 'error'}})    
-    
+        db.write(mol, name='{label}_prod', data={{'status': 'error'}})
+
 
     with open('{label}_prod.log', 'a') as f:
         f.write('done\n')

@@ -1,3 +1,4 @@
+"ase_sella_ts_end.tpl.py"
 import os
 import shutil
 
@@ -9,53 +10,29 @@ from sella import Sella
 
 from kinbot.constants import EVtoHARTREE
 from kinbot.ase_modules.calculators.{code} import {Code}
+from kinbot.ase_modules.calculators.nn_pes import Nn_surr
 from kinbot.stationary_pt import StationaryPoint
 from kinbot.frequencies import get_frequencies
+from kinbot.ase_sella_util import calc_vibrations
 
-
-def calc_vibrations(mol):
-        mol.calc.label = '{label}_vib'
-        if 'chk' in mol.calc.parameters:
-            del mol.calc.parameters['chk']
-        # Compute frequencies in a separate temporary directory to avoid 
-        # conflicts accessing the cache in parallel calculations.
-        if not os.path.isdir('{label}_vib'):
-            os.mkdir('{label}_vib')
-        init_dir = os.getcwd()
-        os.chdir('{label}_vib')
-        if os.path.isdir('vib'):
-            shutil.rmtree('vib')
-        vib = Vibrations(mol)
-        vib.run()
-        # Use kinbot frequencies to avoid mixing low vib frequencies with 
-        # the values associated with external rotations.
-        _ = vib.get_frequencies()
-        zpe = vib.get_zero_point_energy() * EVtoHARTREE
-        hessian = vib.H / 97.17370087
-        st_pt = StationaryPoint.from_ase_atoms(mol)
-        st_pt.characterize()
-        freqs, _ = get_frequencies(st_pt, hessian, st_pt.geom)
-        os.chdir(init_dir)
-        shutil.rmtree('{label}_vib')
-        return freqs, zpe, hessian
-
+BASE_LABEL = os.path.basename("{label}")
+CALC_DIR = os.path.join(os.path.dirname("{label}") or ".",
+                        f"{{BASE_LABEL}}_dir")
 
 db = connect('{working_dir}/kinbot.db')
 mol = Atoms(symbols={atom},
             positions={geom})
 
 kwargs = {kwargs}
-mol.calc = {Code}(**kwargs)
-if '{Code}' == 'Gaussian':
-    mol.get_potential_energy()
-    kwargs['guess'] = 'Read'
-    mol.calc = {Code}(**kwargs)
+if "label" not in kwargs:
+    kwargs["label"] = "{label}"
+mol.calc = Nn_surr()
 
 if os.path.isfile('{label}_sella.log'):
     os.remove('{label}_sella.log')
 
 sella_kwargs = {sella_kwargs}
-opt = Sella(mol, order=1, 
+opt = Sella(mol, order=1,
             trajectory='{label}.traj',
             logfile='{label}_sella.log',
             **sella_kwargs)
@@ -68,7 +45,7 @@ try:
     while not converged and attempts <= 3:
         mol.calc.label = '{label}'
         converged = opt.run(fmax=fmax, steps=steps)
-        freqs, zpe, hessian = calc_vibrations(mol)
+        freqs, zpe, hessian, dft_energy = calc_vibrations(mol, BASE_LABEL, CALC_DIR)
         if (np.count_nonzero(np.array(freqs) < 0) > 2  # More than two imag frequencies
                 or np.count_nonzero(np.array(freqs) < -50) >= 2  # More than one frequency smaller than 50i
                 or np.count_nonzero(np.array(freqs) < 0) == 0):  # No imaginary frequencies
@@ -81,10 +58,12 @@ try:
                 print(f'Retrying with a tighter criterion: fmax={{fmax}}.')
         else:
             converged = True
+            #e = mol.calc.get_potential_energy_dft(mol, **kwargs)
             e = mol.get_potential_energy()
-            db.write(mol, name='{label}', 
-                     data={{'energy': e, 'frequencies': freqs, 'zpe': zpe, 
-                            'hess': hessian, 'status': 'normal'}})            
+            print(f'TS end for {label} converged with energy: {{e}}')
+            db.write(mol, name='{label}',
+                     data={{'energy': e, 'frequencies': freqs, 'zpe': zpe,
+                            'hess': hessian, 'status': 'normal'}})
     if not converged:
         raise RuntimeError
 except (RuntimeError, ValueError):
