@@ -117,7 +117,7 @@ class HIR:
                                                temp,
                                                0.15):
                             err, energy = self.qc.get_qc_energy(job)
-                            if ai == 0: 
+                            if ai == 0:
                                 success = 1
                             # cut off barriers above 20 kcal/mol to prevent the Fourier fit to oscillate
                             elif (energy - self.hir_energies[rotor][0]) < 20. / constants.AUtoKCAL:
@@ -153,7 +153,7 @@ class HIR:
                 if any([st < 0 for st in status]):
                     continue
                 energies = self.hir_energies[rotor]
-                if abs(energies[0] - self.species.energy) * constants.AUtoKCAL > 0.1:
+                if abs(energies[0] - self.species.energy) * constants.AUtoKCAL > 0.5:
                     logger.warning(f'\t0 angle rotor for rotor {rotor} has a different energy than '
                                    'the optimized structure for '
                                    f'{self.species.name} ({energies[0]} vs {self.species.energy}).')
@@ -166,7 +166,7 @@ class HIR:
                     self.hir_status = [[1 for ai in ri] for ri in self.hir_status]
                     return 0
                 # energies taken if status = 0, successful geom check or normal gauss termination
-                ens = [(energies[i] - energies[0]) * constants.AUtoKCAL 
+                ens = [(energies[i] - energies[0]) * constants.AUtoKCAL
                        for i in range(len(status)) if status[i] == 0]
 
             # if job finishes status set to 0 or 1, if all done then do the following calculation
