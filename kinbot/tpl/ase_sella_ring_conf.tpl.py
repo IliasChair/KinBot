@@ -13,7 +13,8 @@ from kinbot.stationary_pt import StationaryPoint
 from kinbot.ase_sella_util import SellaWrapper
 
 
-USE_LOW_ENERGY_CONFORMER = os.environ.get("USE_LOW_ENERGY_CONFORMER", "False")
+USE_LOW_ENERGY_CONFORMER = os.environ.get('USE_LOW_ENERGY_CONFORMER', 'false').lower() == 'true'
+print(f"USE_LOW_ENERGY_CONFORMER: {{USE_LOW_ENERGY_CONFORMER}}")
 
 db = connect('{working_dir}/kinbot.db')
 mol = Atoms(symbols={atom},

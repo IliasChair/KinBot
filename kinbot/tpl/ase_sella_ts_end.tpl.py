@@ -13,11 +13,15 @@ from kinbot.ase_modules.calculators.{code} import {Code}
 from kinbot.ase_modules.calculators.nn_pes import Nn_surr
 from kinbot.stationary_pt import StationaryPoint
 from kinbot.frequencies import get_frequencies
-from kinbot.ase_sella_util import calc_vibrations
+from kinbot.ase_sella_util import calc_vibrations, SellaWrapper
 
 BASE_LABEL = os.path.basename("{label}")
 CALC_DIR = os.path.join(os.path.dirname("{label}") or ".",
                         f"{{BASE_LABEL}}_dir")
+
+USE_LOW_FORCE_CONFORMER = os.environ.get("USE_LOW_FORCE_CONFORMER", "false").lower() == "true"
+print(f"USE_LOW_FORCE_CONFORMER: {{USE_LOW_FORCE_CONFORMER}}")
+
 
 db = connect('{working_dir}/kinbot.db')
 mol = Atoms(symbols={atom},
@@ -32,7 +36,9 @@ if os.path.isfile('{label}_sella.log'):
     os.remove('{label}_sella.log')
 
 sella_kwargs = {sella_kwargs}
-opt = Sella(mol, order=1,
+opt = SellaWrapper(mol,
+                   use_low_force_conformer=USE_LOW_FORCE_CONFORMER,
+            order=1,
             trajectory='{label}.traj',
             logfile='{label}_sella.log',
             **sella_kwargs)

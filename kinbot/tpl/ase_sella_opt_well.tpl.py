@@ -24,7 +24,7 @@ BASE_LABEL = os.path.basename("{label}")
 CALC_DIR = os.path.join(os.path.dirname("{label}") or ".",
                         f"{{BASE_LABEL}}_dir")
 
-USE_LOW_ENERGY_CONFORMER = os.environ.get("USE_LOW_ENERGY_CONFORMER", "False")
+USE_LOW_ENERGY_CONFORMER = os.environ.get('USE_LOW_ENERGY_CONFORMER', 'false').lower() == 'true'
 print(f"USE_LOW_ENERGY_CONFORMER: {{USE_LOW_ENERGY_CONFORMER}}")
 
 

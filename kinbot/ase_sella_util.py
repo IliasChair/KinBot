@@ -238,21 +238,87 @@ def make_lowest_energy_callback(mol, energy_container):
         return
     return callback
 
+
+def make_lowest_force_callback(mol, force_container):
+    """
+    Create stateful callback that tracks the conformer with the lowest fmax.
+
+    This callback updates a mutable dictionary with the lowest fmax
+    found and corresponding Atoms object.
+
+    This is used to help combat divergence issues. If we hit max steps during
+    optimization, we either:
+    1. Did not allow for enough steps and slow convergence.
+    2. The optimization is diverging.
+
+    In the former case, the lowest force conformer will simply be the
+    structure from the latest iteration. In the latter case, the most optimal
+    structure will be the one from the previous iterations.
+
+    In either case we can use the lowest force structure from a previous
+    iteration as a starting point for the next round of optimization and try
+    again.
+
+    :param mol: Target molecule.
+    :type mol: ase.atoms.Atoms
+    :param force_container: Mutable dictionary to store lowest fmax and
+                            corresponding Atoms object.
+    :return: Configured callback function.
+    :rtype: callable
+    """
+    def callback():
+        """
+        Evaluate current fmax and update lowest force container if
+        improved.
+        """
+        force_container["step"] += 1
+        try:
+            forces = mol.get_forces()
+            current_fmax = np.abs(forces).max()
+            if current_fmax < force_container.get('min_fmax', np.inf):
+                force_container['min_fmax'] = current_fmax
+                force_container['positions'] = mol.get_positions().copy()
+        except Exception as e:
+            logging.error("Lowest force callback error: %s", e)
+        return
+    return callback
+
+
 class SellaWrapper:
     """A wrapper for the Sella optimizer to handle lowest energy conformers."""
-    def __init__(self, atoms, use_low_energy_conformer=False, **kwargs):
+    def __init__(
+            self,
+            atoms,
+            use_low_energy_conformer=False,
+            use_low_force_conformer=False,
+            **kwargs):
         """
         Initializes the SellaWrapper.
         :param atoms: The ASE Atoms object to be optimized.
         :param use_low_energy_conformer: If True, track and use the lowest
                                          energy conformer found during
                                          optimization.
+        :param use_low_force_conformer: If True, track and use the lowest
+                                        fmax conformer found during
+                                        optimization.
         :param kwargs: Keyword arguments to be passed to the Sella optimizer.
         """
+        if use_low_energy_conformer and use_low_force_conformer:
+            raise ValueError(
+                "use_low_energy_conformer and use_low_force_conformer "
+                "cannot be used at the same time."
+            )
+        if isinstance(use_low_energy_conformer, str):
+            use_low_energy_conformer = use_low_energy_conformer.lower() == "true"
+        if isinstance(use_low_force_conformer, str):
+            use_low_force_conformer = use_low_force_conformer.lower() == "true"
+
         self.atoms = atoms
         self.use_low_energy_conformer = use_low_energy_conformer
+        self.use_low_force_conformer = use_low_force_conformer
         self.optimizer = Sella(atoms, **kwargs)
         self.lowest_energy_info = None
+        self.lowest_force_info = None
 
         if self.use_low_energy_conformer:
             self.lowest_energy_info = {
@@ -261,7 +327,19 @@ class SellaWrapper:
                 'step': 0
             }
             self.optimizer.attach(
-                make_lowest_energy_callback(self.atoms, self.lowest_energy_info),
+                make_lowest_energy_callback(
+                    self.atoms, self.lowest_energy_info),
+                interval=1
+            )
+        elif self.use_low_force_conformer:
+            self.lowest_force_info = {
+                'min_fmax': np.inf,
+                'positions': self.atoms.get_positions().copy(),
+                'step': 0
+            }
+            self.optimizer.attach(
+                make_lowest_force_callback(
+                    self.atoms, self.lowest_force_info),
                 interval=1
             )
 
@@ -282,6 +360,15 @@ class SellaWrapper:
                 "Using lowest energy conformer from step "
                 f"{self.lowest_energy_info['step']} with energy "
                 f"{self.lowest_energy_info['min_energy']:.6f} eV"
+            )
+        elif self.use_low_force_conformer:
+            # After optimization, set the atoms' positions to the lowest
+            # fmax conformer found.
+            self.atoms.set_positions(self.lowest_force_info['positions'])
+            logging.info(
+                "Using lowest fmax conformer from step "
+                f"{self.lowest_force_info['step']} with fmax "
+                f"{self.lowest_force_info['min_fmax']:.6f} eV/A"
             )
 
         return converged
