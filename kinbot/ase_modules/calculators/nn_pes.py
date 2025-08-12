@@ -198,7 +198,9 @@ class Nn_surr(Calculator):
             "12_layers": ROOT_PATH / "rundir_12/out/checkpoints/2025-02-17-16-19-28/best_freq_rmse_checkpoint.pt",
             "new_8_layers":"/hpcwork/thes1749/rundir_8/out/checkpoints/2025-05-20-12-01-36/best_checkpoint.pt", #Nr1
             "new_12_layers":"/hpcwork/thes1749/rundir_12/out/checkpoints/2025-05-20-11-57-20/best_checkpoint.pt", #Nr2
-            "new_7_layers":"/hpcwork/thes1749/rundir_7/out/checkpoints/2025-06-30-05-31-12/best_checkpoint.pt"
+            "new_7_layers":"/hpcwork/thes1749/rundir_7/out/checkpoints/2025-06-30-05-31-12/best_checkpoint.pt",
+            "new_dens_12_layers":"/hpcwork/thes1749/rundir_12_dens/out/checkpoints/2025-08-05-19-29-36/best_checkpoint.pt",
+            "new_12_layers_16_epochs": "/hpcwork/thes1749/rundir_12_16_epochs/out/checkpoints/2025-08-09-01-15-12/best_checkpoint.pt",
         }
 
         checkpoint_path = calculators[force_calculator_name]
