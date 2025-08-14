@@ -22,6 +22,8 @@ CALC_DIR = os.path.join(os.path.dirname("{label}") or ".",
 USE_LOW_FORCE_CONFORMER = os.environ.get("USE_LOW_FORCE_CONFORMER", "false").lower() == "true"
 print(f"USE_LOW_FORCE_CONFORMER: {{USE_LOW_FORCE_CONFORMER}}")
 
+FMAX = float(os.environ.get('TS_FMAX', 5e-4))
+print(f"using ts_fmax: {{TS_FMAX}}")
 
 db = connect('{working_dir}/kinbot.db')
 mol = Atoms(symbols={atom},
@@ -35,7 +37,13 @@ mol.calc = Nn_surr()
 if os.path.isfile('{label}_sella.log'):
     os.remove('{label}_sella.log')
 
-sella_kwargs = {sella_kwargs}
+sella_kwargs = {{'delta0': 0.054701161,
+                'eta': 0.000979549,
+                'gamma': 0.392400424,
+                'rho_dec': 4.819467426,
+                'rho_inc': 1.082799457,
+                'sigma_dec': 0.827264867,
+                'sigma_inc': 1.165201893}}
 opt = SellaWrapper(mol,
                    use_low_force_conformer=USE_LOW_FORCE_CONFORMER,
             order=1,
@@ -45,7 +53,7 @@ opt = SellaWrapper(mol,
 freqs = []
 try:
     converged = False
-    fmax = 1e-4
+    fmax = FMAX
     attempts = 1
     steps=500
     while not converged and attempts <= 3:

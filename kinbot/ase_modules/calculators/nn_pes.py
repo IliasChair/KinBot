@@ -200,7 +200,7 @@ class Nn_surr(Calculator):
             "new_12_layers":"/hpcwork/thes1749/rundir_12/out/checkpoints/2025-05-20-11-57-20/best_checkpoint.pt", #Nr2
             "new_7_layers":"/hpcwork/thes1749/rundir_7/out/checkpoints/2025-06-30-05-31-12/best_checkpoint.pt",
             "new_dens_12_layers":"/hpcwork/thes1749/rundir_12_dens/out/checkpoints/2025-08-05-19-29-36/best_checkpoint.pt",
-            "new_12_layers_16_epochs": "/hpcwork/thes1749/rundir_12_16_epochs/out/checkpoints/2025-08-09-01-15-12/best_checkpoint.pt",
+            "new_12_layers_16_epochs": "/hpcwork/thes1749/rundir_12_16_epochs/out/checkpoints/2025-08-13-14-41-36/best_checkpoint.pt",
         }
 
         checkpoint_path = calculators[force_calculator_name]

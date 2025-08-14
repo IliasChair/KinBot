@@ -27,6 +27,8 @@ CALC_DIR = os.path.join(os.path.dirname("{label}") or ".",
 USE_LOW_ENERGY_CONFORMER = os.environ.get('USE_LOW_ENERGY_CONFORMER', 'false').lower() == 'true'
 print(f"USE_LOW_ENERGY_CONFORMER: {{USE_LOW_ENERGY_CONFORMER}}")
 
+FMAX = float(os.environ.get('FMAX', 1e-4))
+print(f"using fmax: {{FMAX}}")
 
 db = connect('{working_dir}/kinbot.db')
 mol = Atoms(symbols={atom},
@@ -63,7 +65,7 @@ opt = SellaWrapper(mol,
 freqs = []
 try:
     converged = False
-    fmax = 1e-4
+    fmax = FMAX
     attempts = 1
     steps=500
     while not converged and attempts <= 3:

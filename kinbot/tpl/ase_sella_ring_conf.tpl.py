@@ -16,6 +16,9 @@ from kinbot.ase_sella_util import SellaWrapper
 USE_LOW_ENERGY_CONFORMER = os.environ.get('USE_LOW_ENERGY_CONFORMER', 'false').lower() == 'true'
 print(f"USE_LOW_ENERGY_CONFORMER: {{USE_LOW_ENERGY_CONFORMER}}")
 
+FMAX = float(os.environ.get('FMAX', 1e-4))
+print(f"using fmax: {{FMAX}}")
+
 db = connect('{working_dir}/kinbot.db')
 mol = Atoms(symbols={atom},
             positions={geom})
@@ -52,7 +55,7 @@ opt = SellaWrapper(mol,
 
 try:
     mol.calc.label = '{label}'
-    opt.run(fmax=1e-4, steps=100)
+    opt.run(fmax=FMAX, steps=100)
     #e = mol.calc.get_potential_energy_dft(mol, **kwargs)
     e = mol.get_potential_energy()
     print(f'Opt well for {label} converged with energy: {{e}}')

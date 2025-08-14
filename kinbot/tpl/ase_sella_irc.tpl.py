@@ -8,6 +8,9 @@ from sella import Sella, IRC
 from kinbot.ase_modules.calculators.nn_pes import Nn_surr
 from kinbot.ase_modules.calculators.{code} import {Code}
 
+FMAX = float(os.environ.get('FMAX', 1e-4))
+print(f"using fmax: {{FMAX}}")
+
 db = connect('{working_dir}/kinbot.db')
 mol = Atoms(symbols={atom},
             positions={geom})
@@ -65,7 +68,7 @@ if success:
                 logfile='{label}_prod_sella.log',
                 **sella_kwargs)
     try:
-        converged_opt = opt.run(fmax=0.0001, steps=300)
+        converged_opt = opt.run(fmax=FMAX, steps=300)
         if converged_opt:
             #e = mol.calc.get_potential_energy_dft(mol, **prod_kwargs)
             e = mol.get_potential_energy()
