@@ -233,6 +233,8 @@ def make_lowest_energy_callback(mol, energy_container):
             if current_energy < energy_container.get('min_energy', np.inf):
                 energy_container['min_energy'] = current_energy
                 energy_container['positions'] = mol.get_positions().copy()
+                forces = mol.get_forces()
+                energy_container['fmax'] = np.sqrt((forces**2).sum(axis=1).max())
         except Exception as e:
             logging.error("Lowest energy callback error: %s", e)
         return
@@ -291,6 +293,7 @@ class SellaWrapper:
             atoms,
             use_low_energy_conformer=False,
             use_low_force_conformer=False,
+            low_energy_fmax_threshold=0.001,
             **kwargs):
         """
         Initializes the SellaWrapper.
@@ -301,6 +304,8 @@ class SellaWrapper:
         :param use_low_force_conformer: If True, track and use the lowest
                                         fmax conformer found during
                                         optimization.
+        :param low_energy_fmax_threshold: The fmax threshold for the lowest
+                                          energy conformer.
         :param kwargs: Keyword arguments to be passed to the Sella optimizer.
         """
         if use_low_energy_conformer and use_low_force_conformer:
@@ -319,11 +324,13 @@ class SellaWrapper:
         self.optimizer = Sella(atoms, **kwargs)
         self.lowest_energy_info = None
         self.lowest_force_info = None
+        self.low_energy_fmax_threshold = low_energy_fmax_threshold
 
         if self.use_low_energy_conformer:
             self.lowest_energy_info = {
                 'min_energy': np.inf,
                 'positions': self.atoms.get_positions().copy(),
+                'fmax': np.inf,
                 'step': 0
             }
             self.optimizer.attach(
@@ -352,15 +359,15 @@ class SellaWrapper:
         """
         converged = self.optimizer.run(*args, **kwargs)
 
-        if self.use_low_energy_conformer:
-            # After optimization, set the atoms' positions to the lowest
-            # energy conformer found.
-            self.atoms.set_positions(self.lowest_energy_info['positions'])
-            logging.info(
-                "Using lowest energy conformer from step "
-                f"{self.lowest_energy_info['step']} with energy "
-                f"{self.lowest_energy_info['min_energy']:.6f} eV"
-            )
+        if self.use_low_energy_conformer and not converged:
+            if self.lowest_energy_info['fmax'] < self.low_energy_fmax_threshold:
+                self.atoms.set_positions(self.lowest_energy_info['positions'])
+                logging.info(
+                    "Using lowest energy conformer from step "
+                    f"{self.lowest_energy_info['step']} with energy "
+                    f"{self.lowest_energy_info['min_energy']:.6f} eV and "
+                    f"fmax {self.lowest_energy_info['fmax']:.6f} eV/A"
+                )
         elif self.use_low_force_conformer:
             # After optimization, set the atoms' positions to the lowest
             # fmax conformer found.
