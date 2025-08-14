@@ -22,7 +22,7 @@ CALC_DIR = os.path.join(os.path.dirname("{label}") or ".",
 USE_LOW_FORCE_CONFORMER = os.environ.get("USE_LOW_FORCE_CONFORMER", "false").lower() == "true"
 print(f"USE_LOW_FORCE_CONFORMER: {{USE_LOW_FORCE_CONFORMER}}")
 
-FMAX = float(os.environ.get('TS_FMAX', 5e-4))
+TS_FMAX = float(os.environ.get('TS_FMAX', 1e-4))
 print(f"using ts_fmax: {{TS_FMAX}}")
 
 db = connect('{working_dir}/kinbot.db')
@@ -32,7 +32,7 @@ mol = Atoms(symbols={atom},
 kwargs = {kwargs}
 if "label" not in kwargs:
     kwargs["label"] = "{label}"
-mol.calc = Nn_surr()
+mol.calc = Nn_surr(force_calculator_name='gaussian_wb97x_6_31g', energy_calculator_name='gaussian_wb97x_6_31g')
 
 if os.path.isfile('{label}_sella.log'):
     os.remove('{label}_sella.log')
@@ -53,7 +53,7 @@ opt = SellaWrapper(mol,
 freqs = []
 try:
     converged = False
-    fmax = FMAX
+    fmax = TS_FMAX
     attempts = 1
     steps=500
     while not converged and attempts <= 3:
