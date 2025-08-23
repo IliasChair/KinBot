@@ -20,6 +20,7 @@ import warnings
 import logging
 import tempfile
 import shutil
+from xtb.ase.calculator import XTB
 
 ELEMENT_ENERGIES = {
     # energies in Hartree at coupled cluster cc-pCVTZ level
@@ -122,11 +123,16 @@ class Nn_surr(Calculator):
                                       mult=get_valid_multiplicity(self.atoms))
                 elif calc_type == "aimnet2ens":
                     calc = AIMNet2ASE_ENS()
+                elif calc_type.lower() in ("gfn2xtb", "xtb"):
+                    # Map multiplicity to number of unpaired electrons (uhf)
+                    mult = get_valid_multiplicity(self.atoms)
+                    uhf = max(0, int(mult) - 1)
+                    calc = XTB(method="GFN2-xTB", uhf=uhf)
                 elif calc_type.startswith("gaussian"):
                     temp_dir = tempfile.mkdtemp(prefix="gaussian_calc_")
                     params = {
-                        "mem": "12GB",
-                        "nprocshared": 4,
+                        "mem": "4GB",
+                        "nprocshared": 2,
                         "mult": get_valid_multiplicity(self.atoms),
                         "directory": temp_dir,
                         "extra": "scf=(tight, xqc) int=ultrafine guess=mix",  # "XQC,Conver=6,Direct"
@@ -175,6 +181,13 @@ class Nn_surr(Calculator):
             # We can safely assume self.atoms is populated before this is called.
             calc = self.get_energy_calculator(calc_type=force_calculator_name)
             self._force_calculator = calc
+            return self._force_calculator
+
+        if force_calculator_name.lower() in ("gfn2xtb", "xtb"):
+            # Map multiplicity to number of unpaired electrons (uhf)
+            mult = get_valid_multiplicity(self.atoms)
+            uhf = max(0, int(mult) - 1)
+            self._force_calculator = XTB(method="GFN2-xTB", uhf=uhf)
             return self._force_calculator
 
         get_model = partial(
@@ -304,10 +317,10 @@ class Nn_surr(Calculator):
                     basis="6-31G(d)",
                     label=label + "_dft_energy",
                     extra="scf=(tight, xqc) int=ultrafine guess=mix",
-                    nprocshared=4,
+                    nprocshared=2,
                     mult=get_valid_multiplicity(mol),
                     force="",  # Crucial for Sella
-                    mem="12GB",
+                    mem="4GB",
                 )
         copy_from_mol.calc.label = label + "_dft_energy"
 

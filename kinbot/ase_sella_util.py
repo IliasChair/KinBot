@@ -149,8 +149,8 @@ def setup_gaussian_calc(mol: Atoms, BASE_LABEL: str, CALC_DIR: str, mult: Option
     """Configure Gaussian calculator for the molecule."""
 
     calc_params = {
-        "mem": "8GB",
-        "nprocshared": 4,
+        "mem": "4GB",
+        "nprocshared": 2,
         "method": "wb97xd",
         "basis": "def2tzvp",
         "chk": f"{BASE_LABEL}_vib.chk",
