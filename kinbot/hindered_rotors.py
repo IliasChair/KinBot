@@ -153,7 +153,7 @@ class HIR:
                 if any([st < 0 for st in status]):
                     continue
                 energies = self.hir_energies[rotor]
-                if abs(energies[0] - self.species.energy) * constants.AUtoKCAL > 0.5:
+                if abs(energies[0] - self.species.energy) * constants.AUtoKCAL > 5:
                     logger.warning(f'\t0 angle rotor for rotor {rotor} has a different energy than '
                                    'the optimized structure for '
                                    f'{self.species.name} ({energies[0]} vs {self.species.energy}).')
